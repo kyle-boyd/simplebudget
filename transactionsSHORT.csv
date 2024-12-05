@@ -1,0 +1,49 @@
+Date,Description,Original Description,Amount,Type,Parent Category,Category,Account,Tags,Memo,Pending
+11/8/24,Little Bird Hair S,SQ *LITTLE BIRD HAIR S,45,Debit,Personal Care,Hair,Chase Freedom,,,true
+11/8/24,Bluebeam Inc,BLUEBEAM INC.,260,Debit,Business Services,Business Services,Chase Freedom,,,true
+11/8/24,Autodesk Ady,Autodesk ADY,382.56,Debit,Shopping,Shopping,Chase Freedom,,,true
+11/7/24,Odells Bagel Highl,TST* ODELLS BAGEL - HIGHL,15.99,Debit,Uncategorized,Uncategorized,Chase Sapphire Preferred,,,true
+11/7/24,Honey Hill Cafe,SQ *HONEY HILL CAFE,8.56,Debit,Food & Dining,Food & Dining,Chase Freedom,,,false
+11/7/24,Honey Hill Cafe,SQ *HONEY HILL CAFE,7.05,Debit,Food & Dining,Food & Dining,Chase Freedom,,,false
+11/6/24,Amazon,AMAZON MKTPL*MP6CQ6F53,22.04,Debit,Shopping,Shopping,Chase Freedom,,,false
+11/5/24,Flyteco Brewing,FlyteCo Brewing,10.88,Debit,Food & Dining,Coffee Shops,Chase Sapphire Preferred,,,false
+11/5/24,Transfer to Venmo,External Withdrawal - VENMO  - PAYMENT,40,Debit,Transfer,Transfer,6554 * Member Advantage Checking,,VENMO  - PAYMENT ,false
+11/5/24,Cityofdenverwast,CITYOFDENVERWAST,39,Debit,Bills & Utilities,Utilities,Chase Freedom,,,false
+11/5/24,Provident Funding,"External Withdrawal - PROVIDENT FUNDIN G ASSOCIATES, L.P. - ACH PMT",1882.57,Debit,Home,Mortgage & Rent,6554 * Member Advantage Checking,,"PROVIDENT FUNDIN G ASSOCIATES, L.P. - ACH PMT ",false
+11/4/24,King Soopers,KING SOOPERS #5124,62.72,Debit,Food & Dining,Groceries,Chase Freedom,,,false
+11/4/24,Transfer to Checking Account 1864,Withdrawal - Online Banking Transfer To XXXXXX1864 CK,435.5,Debit,Transfer,Transfer,6554 * Member Advantage Checking,,Online Banking Transfer To XXXXXX1864 CK,false
+11/4/24,Chase Credit Card,External Withdrawal - CHASE CREDIT CRD  - AUTOPAY,1156.76,Debit,Transfer,Credit Card Payment,6554 * Member Advantage Checking,,CHASE CREDIT CRD  - AUTOPAY ,false
+11/4/24,Transfer From Xxxxxx6554,Deposit - Online Banking Transfer from XXXXXX6554 CK,435.5,Credit,Transfer,Transfer,1864 * Member Advantage Checking,,Online Banking Transfer from XXXXXX6554 CK,false
+11/4/24,King Soopers,KING SOOPERS #0724 FUEL,34.21,Debit,Auto & Transport,Gas,Chase Freedom,,,false
+11/4/24,Trader Joe's,TRADER JOE S #300,93.57,Debit,Food & Dining,Groceries,Chase Freedom,,,false
+11/4/24,American Express Credit Card,External Withdrawal - AMEX EPAYMENT AM - ACH PMT,81,Debit,Transfer,Credit Card Payment,6554 * Member Advantage Checking,,AMEX EPAYMENT AM - ACH PMT ,false
+11/4/24,Xcel Energy,External Withdrawal - XCEL ENERGY-PSCO  - XCELENERGY,74.89,Debit,Bills & Utilities,Utilities,6554 * Member Advantage Checking,,XCEL ENERGY-PSCO  - XCELENERGY ,false
+11/4/24,Transfer to Venmo,External Withdrawal - VENMO  - PAYMENT,15,Debit,Transfer,Transfer,6554 * Member Advantage Checking,,VENMO  - PAYMENT ,false
+11/2/24,Trader Joe's,TRADER JOE S #300,103.73,Debit,Food & Dining,Groceries,Chase Freedom,,,false
+11/1/24,Transfer to Savings Account 1856,Withdrawal - Online Banking Transfer To XXXXXX1856 SAV,50,Debit,Transfer,Transfer,6554 * Member Advantage Checking,,Online Banking Transfer To XXXXXX1856 SAV,false
+11/1/24,Transfer From Xxxxxx6554,Deposit - Online Banking Transfer from XXXXXX6554 CK,50,Credit,Transfer,Transfer,1856 * Member Advantage Savings,,Online Banking Transfer from XXXXXX6554 CK,false
+11/1/24,Annual Membership Fee,ANNUAL MEMBERSHIP FEE,69,Debit,Fees & Charges,Fees & Charges,Rapid Rewards Plus,,,false
+11/1/24,Automatic Payment,AUTOMATIC PAYMENT - THANK,1156.76,Credit,Transfer,Transfer,Chase Sapphire Preferred,,,false
+10/31/24,Trader Joe's,TRADER JOE S #300,88.04,Debit,Food & Dining,Groceries,Chase Freedom,,,false
+10/31/24,Cigna,CIGNA 877 484 5967,37.01,Debit,Health & Fitness,Health Insurance,Chase Freedom,,,false
+10/31/24,Acelab,External Deposit - ACELAB  - PAYROLL,4327.07,Credit,Income,Paycheck,6554 * Member Advantage Checking,,ACELAB  - PAYROLL ,false
+10/30/24,ARCO,ARCO #42104,35.45,Debit,Auto & Transport,Gas,Chase Sapphire Preferred,,,false
+10/30/24,Target,TARGET        XXXX2055,14.58,Debit,Gifts & Donations,Gift,Chase Sapphire Preferred,,,false
+10/30/24,Trader Joe's,TRADER JOE S #023,35.68,Debit,Food & Dining,Groceries,Chase Freedom,,,false
+10/29/24,Target,TARGET        XXXX4711,36.96,Debit,Gifts & Donations,Gift,Chase Freedom,,,false
+10/28/24,Target,TARGET        XXXX2055,9.57,Debit,Gifts & Donations,Gift,Chase Freedom,,,false
+10/27/24,Legoland,Legoland California LLC,10.75,Debit,Entertainment,Entertainment,Chase Sapphire Preferred,,,false
+10/27/24,Legoland,LEGOLAND California,35,Debit,Entertainment,Entertainment,Chase Sapphire Preferred,,,false
+10/27/24,Act Denver Parks,ACT*Denver Parks &,30.75,Debit,Kids,Kids Activities,Chase Freedom,,,false
+10/27/24,Amazon,AMAZON MKTPL*4N3UH46D3,39.43,Debit,Shopping,Shopping,Chase Freedom,,,false
+10/26/24,Chipotle,CHIPOTLE 1773,82.21,Debit,Food & Dining,Fast Food,Chase Sapphire Preferred,,,false
+10/26/24,Payless Car Rental,Payless Car Rental,134,Debit,Travel,Rental Car & Taxi,Chase Sapphire Preferred,,,false
+10/26/24,Car Rental Company,Car Rental Company,133.84,Credit,Travel,Rental Car & Taxi,Chase Sapphire Preferred,,,false
+10/26/24,Payless Car Rental,Payless Car Rental,400.48,Debit,Travel,Rental Car & Taxi,Chase Sapphire Preferred,,,false
+10/26/24,Interest Income,Dividend/Interest,1.6,Credit,Income,Interest Income,1864 * Member Advantage Checking,,,false
+10/26/24,Interest Income,Dividend/Interest,2.36,Credit,Income,Interest Income,1856 * Member Advantage Savings,,,false
+10/25/24,King Soopers,KING SOOPERS #5124,71.86,Debit,Food & Dining,Groceries,Chase Freedom,,,false
+10/25/24,King Soopers,KING SOOPERS #0724 FUEL,23.53,Debit,Auto & Transport,Gas,Chase Freedom,,,false
+10/25/24,Trader Joe's,TRADER JOE S #300,26.25,Debit,Food & Dining,Groceries,Chase Freedom,,,false
+10/24/24,Store,05 JPM STORE,14,Debit,Auto & Transport,Service & Parts,Chase Freedom,,,false
+10/24/24,Amazon,AMAZON MKTPL*A96WV66C3,35.1,Debit,Shopping,Shopping,Chase Freedom,,,false

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Transaction Viewer</title>
+    <link rel="stylesheet" href="styles.css">
+
+</head>
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Figtree:ital,wght@0,300..900;1,300..900&display=swap');
+    </style>
+<body>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    
+ 
+
+
+    <nav class="sidenav">
+        <div class="logo">
+            <img src="logo.svg" alt="Logo">
+        </div>
+        <div class="nav-items">
+            <a href="dashboard.html" class="nav-item">Dashboard</a>
+            <a href="index.html" class="nav-item active">Transactions</a>
+            <a href="budget.html" class="nav-item">Budget</a>
+            <button class="nav-item logout" id="logout-button">Log Out</button>
+        </div>
+    </nav>
+
+    
+    <div class="mainContent">
+        <div class="top-controls">
+            <div class="month-selector">
+                <div class="custom-select">
+                    <div class="select-selected" id="selectedMonth">All Months</div>
+                    <div class="select-items" id="monthOptions">
+                        <!-- Options will be populated by JavaScript -->
+                    </div>
+                </div>
+            </div>
+            <div class="upload-section">
+                <div class="file-input-wrapper">
+                    <button class="upload-btn">Upload Transactions</button>
+                    <input type="file" id="csvFileInput" accept=".csv" />
+                </div>
+                <p class="last-updated">Last Updated: <span id="lastUpdatedDate">Never</span></p>
+            </div>
+        </div>
+        <div class="mainTable">
+            <div class="transactions-wrapper">
+                <div class="transaction-header">
+                    <div class="header-date">Date</div>
+                    <div class="header-description">Description</div>
+                    <div class="header-amount">Amount</div>
+                    <div class="header-category">Category</div>
+                    <div class="header-status">Status</div>
+                </div>
+                <div id="transactionsContainer" class="transaction-list">
+                    <!-- Transaction cards will be dynamically populated here -->
+                </div>
+            </div>
+
+            <div class="edit-panel" id="editPanel">
+                <div class="edit-panel-content">
+                    <h3 id="editDescription"></h3>
+                    <span id="editDate"></span>
+                    <span id="editAmount"></span>
+                    
+                    <div class="category-select">
+                        <div class="category-tag" id="editCategoryTag">Select Category</div>
+                        <div class="category-dropdown">
+                            <!-- Will be populated by JavaScript -->
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="categorizeCheckbox">
+                            <span>Always categorize as: <strong><span id="editCategoryTagLabel"></span></strong></span>
+                        </label>
+                    </div>
+                    
+                    <div id="btmButtons">
+                        <button id="closePanelButton">Cancel</button>
+                        <button id="saveChangesButton">Save</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    </div>
+    
+
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/init.js"></script>
+    
+    <script src="js/transactions.js"></script>
+    <script src="js/editPanel.js"></script>
+
+
+
+</body>
+
+</html>

@@ -1,0 +1,29 @@
+:root{
+--brand-light-1000: var(--acelab-brand-light-1000);
+--brand-light-800: var(--acelab-brand-light-800);
+--brand-light-200: var(--acelab-brand-light-200);
+--brand-light-50: var(--acelab-brand-light-50);
+--brand-dark-1000: var(--acelab-brand-dark-1000);
+--brand-dark-800: var(--acelab-brand-dark-800);
+--brand-dark-200: var(--acelab-brand-dark-200);
+--brand-dark-50: var(--acelab-brand-dark-50);
+--grey-solid-1000: var(--grey-slate-solid-1000);
+--grey-solid-900: var(--grey-slate-solid-900);
+--grey-solid-850: var(--grey-slate-solid-850);
+--grey-solid-800: var(--grey-slate-solid-800);
+--grey-solid-50: var(--grey-slate-solid-50);
+--grey-solid-0: var(--grey-slate-solid-0);
+--grey-light-1000: var(--grey-slate-light-1000);
+--grey-light-700: var(--grey-slate-light-700);
+--grey-light-500: var(--grey-slate-light-500);
+--grey-light-100: var(--grey-slate-light-100);
+--grey-light-50: var(--grey-slate-light-50);
+--grey-dark-1000: var(--grey-neutral-dark-1000);
+--grey-dark-700: var(--grey-neutral-dark-700);
+--grey-dark-500: var(--grey-neutral-dark-500);
+--grey-dark-100: var(--grey-neutral-dark-100);
+--grey-dark-50: var(--grey-neutral-dark-50);
+--grey-light-25: var(--grey-slate-light-25);
+--grey-dark-25: var(--grey-neutral-dark-25);
+--grey-solid-25: var(--grey-slate-solid-25);
+}

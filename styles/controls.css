@@ -1,0 +1,10 @@
+/* Top controls styles */
+.top-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 20px;
+    width: 100%;
+}
+
+/* ... rest of controls styles ... */ 

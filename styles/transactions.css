@@ -1,0 +1,66 @@
+/* Transaction header styles */
+.transaction-header {
+    display: flex;
+    align-items: center;
+    padding: 0;
+    margin-bottom: 16px;
+    color: var(--text-weak);
+    font-size: var(--font-size-tiny);
+    font-weight: var(--font-weight-strong);
+    border-bottom: 1px solid var(--stroke-weak);
+    padding-bottom: 8px;
+    min-width: 0;
+}
+
+.header-content {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    padding: 0 24px;
+    width: 100%;
+    min-width: 0;
+}
+
+.header-date {
+    width: 80px;
+}
+
+.header-description {
+    flex: 1;
+    min-width: 0;
+}
+
+.header-amount {
+    width: 120px;
+    text-align: right;
+    padding-right: 24px;
+}
+
+.header-category {
+    width: 240px;
+}
+
+.header-status {
+    width: 108px;
+    text-align: center;
+}
+
+/* Transaction card styles */
+.transaction-card {
+    display: flex;
+    align-items: center;
+    color: var(--text-strong);
+    font-size: var(--font-size-small);
+    min-width: 0;
+}
+
+.transaction-content {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    padding: 12px 24px;
+    width: 100%;
+    min-width: 0;
+}
+
+/* ... rest of transaction styles ... */ 
