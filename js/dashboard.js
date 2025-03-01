@@ -94,7 +94,7 @@ function createCategoryPieChart(transactions, categories) {
                 type: 'bar',
                 label: 'Actual',
                 data: sortedCategories.map(([category]) => categoryTotals[category]),
-                backgroundColor: COLORS.secondary,
+                backgroundColor: ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEEAD'],
                 borderColor: COLORS.border,
                 borderWidth: 1,
                 order: 2
