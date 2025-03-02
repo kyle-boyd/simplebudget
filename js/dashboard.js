@@ -2,7 +2,7 @@
 const COLORS = {
     primary: 'rgb(0, 168, 107)',      // --fill-strong
     secondary: 'var(--background-sunken)',    // --fill-weak (using solid color instead of transparent)
-    expense: 'var(--fill-strong)',      // --text-critical
+    expense: 'rgb(168, 85, 107)',      // --text-critical
     income: 'rgb(0, 168, 107)',         // --text-success
     border: 'rgb(241, 241, 241)',       // --stroke-weak
     text: 'rgb(33, 33, 33)',           // --text-strong
