@@ -1,6 +1,6 @@
 // Define token colors using RGB values
 const COLORS = {
-    primary: 'var(--fill-strong)',      // --fill-strong
+    primary: 'rgb(0, 168, 107)',      // --fill-strong
     secondary: 'var(--background-sunken)',    // --fill-weak (using solid color instead of transparent)
     expense: 'var(--fill-strong)',      // --text-critical
     income: 'rgb(0, 168, 107)',         // --text-success
@@ -357,7 +357,11 @@ function createMonthlySpendingChart(transactions) {
         datasets: [{
             label: 'Total Monthly Spending for 2024',
             data: monthlyTotals,
-            backgroundColor: COLORS.primary,
+            backgroundColor: [
+                '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEEAD', 
+                '#FF9F40', '#EB5757', '#2D9CDB', '#27AE60', '#F2C94C',
+                '#9B51E0', '#828282'
+            ],
             borderColor: COLORS.border,
             borderWidth: 1
         }]
