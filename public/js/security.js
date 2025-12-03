@@ -25,8 +25,8 @@ firebase.auth().onAuthStateChanged((user) => {
   // Handle Sign-Up
   document.getElementById('signup-form').addEventListener('submit', (event) => {
     event.preventDefault();
-    const email = document.getElementById('email').value;
-    const password = document.getElementById('password').value;
+    const email = document.getElementById('signup-username').value;
+    const password = document.getElementById('signup-password').value;
   
     firebase.auth().createUserWithEmailAndPassword(email, password)
       .then((userCredential) => {

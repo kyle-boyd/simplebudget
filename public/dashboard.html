@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Dashboard</title>
+    <link rel="stylesheet" href="./css/tokens.css">
     <link rel="stylesheet" href="styles.css">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Figtree:ital,wght@0,300..900;1,300..900&display=swap');
@@ -30,32 +31,42 @@
     </nav>
 
     <div class="mainContent">
+        <div class="top-controls">
+            <div class="month-selector">
+                <div class="custom-select">
+                    <div class="select-selected" id="selectedMonth">All Months</div>
+                    <div class="select-items" id="monthOptions">
+                        <!-- Options will be populated by JavaScript -->
+                    </div>
+                </div>
+            </div>
+        </div>
         <div class="dashboard-grid">
             <div class="chart-card">
-                <h3>Monthly Spending by Main Category TEST</h3>
+                <h3>Monthly Spending by Main Category</h3>
                 <div class="chart-container">
-                    <canvas id="categoryPieChart"></canvas>
+                    <canvas id="mainSpending"></canvas>
                 </div>
             </div>
             
             <div class="chart-card">
                 <h3>Spending Trends</h3>
                 <div class="chart-container">
-                    <canvas id="spendingTrendChart"></canvas>
+                    <canvas id="categoryChart"></canvas>
                 </div>
             </div>
             
             <div class="chart-card">
                 <h3>Budget vs Actual</h3>
                 <div class="chart-container">
-                    <canvas id="budgetComparisonChart"></canvas>
+                    <canvas id="yearlyBudgetChart"></canvas>
                 </div>
             </div>
             
             <div class="chart-card">
                 <h3>Top Spending Categories</h3>
                 <div class="chart-container">
-                    <canvas id="topSpendingChart"></canvas>
+                    <canvas id="overBudgetChart"></canvas>
                 </div>
             </div>
         </div>
@@ -67,7 +78,6 @@
     <!-- Then load your application scripts -->
     <script src="js/init.js"></script>
     <script src="js/utils.js"></script>
-    
     <script src="js/dashboard.js"></script>
 </body>
 </html> 

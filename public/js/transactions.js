@@ -6,7 +6,10 @@ function handleFileUpload(event) {
         return;
     }
     console.log('File selected:', file.name);
-
+    const csvColumns = ['Date', 'Amount', 'Description']; // Example CSV columns
+    const platformColumns = ['Transaction Date', 'Transaction Amount', 'Transaction Description']; // Example platform columns
+    openColumnMappingModal(csvColumns, platformColumns, file); // Pass the file to the modal
+    
     Papa.parse(file, {
         header: true,
         complete: function(results) {
@@ -77,6 +80,173 @@ function handleFileUpload(event) {
     event.target.value = '';
 }
 
+function openColumnMappingModal(csvColumns, platformColumns, file) {
+    const mappingContainer = document.getElementById('mappingContainer');
+    mappingContainer.innerHTML = ''; // Clear previous mappings
+
+    // Parse the file to get the headers
+    Papa.parse(file, {
+        header: true,
+        complete: function(results) {
+            const availableFields = Object.keys(results.data[0]); // Get all available fields from the CSV
+
+            // Create mapping for required categories
+            const requiredCategories = ['Date', 'Amount', 'Description', 'Category']; // Added 'Category'
+
+            requiredCategories.forEach(category => {
+                const mappingRow = document.createElement('div');
+                mappingRow.className = 'mapping-row';
+
+                const categoryLabel = document.createElement('label');
+                categoryLabel.textContent = `${category}:`;
+                mappingRow.appendChild(categoryLabel);
+
+                const select = document.createElement('select');
+                availableFields.forEach(field => {
+                    const option = document.createElement('option');
+                    option.value = field;
+                    option.textContent = field;
+                    select.appendChild(option);
+                });
+
+                mappingRow.appendChild(select);
+                mappingContainer.appendChild(mappingRow);
+            });
+
+            document.getElementById('columnMappingModal').style.display = 'block';
+
+            // Add a save button to validate mappings
+            const saveButton = document.getElementById('saveMappingButton');
+            saveButton.onclick = () => {
+                const mappings = {};
+                const mappingRows = document.querySelectorAll('.mapping-row');
+
+                mappingRows.forEach(row => {
+                    const category = row.querySelector('label').textContent.replace(':', '');
+                    const selectedField = row.querySelector('select').value;
+                    mappings[category] = selectedField; // Store mapping as category: selectedField
+                });
+
+                // Validate required fields
+                const requiredFields = ['Date', 'Amount', 'Category']; // Ensure Category is included
+                const hasRequiredFields = requiredFields.every(field => mappings[field]);
+
+                if (!hasRequiredFields) {
+                    alert('Please ensure that Date, Amount, and Category fields are mapped.');
+                    return;
+                }
+
+                console.log('Column Mappings:', mappings);
+                // Proceed with parsing the file and processing transactions
+                parseCSVFile(file, mappings);
+                closeColumnMappingModal();
+            };
+        },
+        error: function(error) {
+            console.error('Error parsing file:', error);
+        }
+    });
+}
+
+function parseCSVFile(file, mappings) {
+    Papa.parse(file, {
+        header: true,
+        complete: function(results) {
+            // Map the results to rename fields based on mappings
+            const mappedResults = results.data.map(transaction => {
+                const newTransaction = {};
+                for (const category in mappings) {
+                    const csvField = mappings[category]; // Get the selected CSV field for the category
+                    newTransaction[category] = transaction[csvField]; // Map the CSV field to the category
+                }
+                return newTransaction;
+            });
+
+            // Filter out transactions missing required fields
+            const newTransactions = mappedResults
+                .filter(transaction => {
+                    const hasRequiredFields = transaction.Date && transaction.Amount;
+                    if (!hasRequiredFields) {
+                        console.log('Filtered out transaction missing required fields:', transaction);
+                    }
+                    return hasRequiredFields;
+                })
+                .map(transaction => {
+                    console.log('Processing transaction:', transaction);
+                    const transactionId = createTransactionId(transaction);
+                    let amount = parseFloat(transaction.Amount.replace(/[^0-9.-]/g, ''));
+
+                    if (transaction.Type && transaction.Type.toLowerCase() === 'debit') {
+                        amount = -Math.abs(amount);
+                    }
+
+                    const processedTransaction = {
+                        ...transaction,
+                        Amount: amount,
+                        id: transactionId,
+                        confirmed: false
+                    };
+                    console.log('Processed transaction:', processedTransaction);
+                    return processedTransaction;
+                })
+                .filter(newTrans => {
+                    const isDuplicate = transactions.some(existingTrans => 
+                        existingTrans.id === newTrans.id
+                    );
+                    if (isDuplicate) {
+                        console.log('Filtered out duplicate transaction:', newTrans);
+                    }
+                    return !isDuplicate;
+                });
+
+            console.log('New transactions to add:', newTransactions.length);
+            console.log('New transactions:', newTransactions);
+
+            if (newTransactions.length > 0) {
+                const updatedTransactions = [...newTransactions, ...transactions];
+                console.log('Saving updated transactions to Firebase...');
+                saveTransactionsToFirebase(updatedTransactions)
+                    .then(() => {
+                        console.log('Successfully saved to Firebase');
+                        transactions = updatedTransactions;
+                        displayTransactions(transactions);
+                        initializeMonthDropdown();
+                        updateLastUpdatedDate();
+                    })
+                    .catch(error => {
+                        console.error('Error saving to Firebase:', error);
+                    });
+            } else {
+                console.log('No new transactions to add');
+            }
+        },
+        error: function(error) {
+            console.error('Error parsing file:', error);
+        }
+    });
+}
+
+function closeColumnMappingModal() {
+    document.getElementById('columnMappingModal').style.display = 'none';
+}
+
+document.getElementById('saveMappingButton').addEventListener('click', () => {
+    const mappings = [];
+    const mappingRows = document.querySelectorAll('.mapping-row');
+
+    mappingRows.forEach(row => {
+        const csvColumn = row.querySelector('label').textContent.replace('CSV Column: ', '');
+        const platformColumn = row.querySelector('select').value;
+        mappings.push({ csvColumn, platformColumn });
+    });
+
+    console.log('Column Mappings:', mappings);
+    closeColumnMappingModal();
+});
+
+
+
+
 function createTransactionId(transaction) {
     const idString = `${transaction.Date}-${transaction.Description}-${transaction.Amount}`;
     
@@ -90,87 +260,7 @@ function createTransactionId(transaction) {
     return Math.abs(hash).toString();
 }
 
-function displayTransactions(transactions) {
-    const container = document.getElementById('transactionsContainer');
-    if (!container) return;
-    
-    container.innerHTML = '';
-    
-    const sortedTransactions = [...transactions].sort((a, b) => {
-        const dateA = new Date(convertDate(a.Date));
-        const dateB = new Date(convertDate(b.Date));
-        return dateB - dateA;
-    });
-    
-    sortedTransactions.forEach(transaction => {
-        const dateParts = transaction.Date.split('/');
-        const date = new Date(2000 + parseInt(dateParts[2]), parseInt(dateParts[0]) - 1, parseInt(dateParts[1]));
-        const formattedDate = date.toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric'
-        });
 
-        const amount = parseFloat(transaction.Amount);
-        const formattedAmount = amount.toLocaleString('en-US', {
-            style: 'currency',
-            currency: 'USD'
-        });
-        const amountClass = amount >= 0 ? 'positive' : '';
-
-        const card = document.createElement('div');
-        card.className = `transaction-card ${transaction.confirmed ? 'confirmed' : ''}`;
-        card.setAttribute('data-id', transaction.id);
-        
-        card.addEventListener('click', (e) => {
-            console.log('Card clicked, target:', e.target);
-            if (!e.target.closest('.category-tag') && !e.target.closest('.confirm-button')) {
-                const editPanel = document.querySelector('.edit-panel');
-                const isSelected = card.classList.contains('selected');
-                
-                if (isSelected && editPanel.classList.contains('open')) {
-                    closeEditPanel();
-                } else {
-                    showEditPanel(transaction);
-                }
-            }
-        });
-        
-        const editPanel = document.querySelector('.edit-panel');
-        if (editPanel.classList.contains('open')) {
-            const editingTransactionId = editPanel.getAttribute('data-editing-id');
-            if (editingTransactionId === transaction.id) {
-                card.classList.add('selected');
-            }
-        }
-        
-        card.innerHTML = `
-            <div class="transaction-content">
-                <div class="transaction-date">${formattedDate}</div>
-                <div class="transaction-name">${transaction.Description}</div>
-                <div class="transaction-amount ${amountClass}">${formattedAmount}</div>
-                <div class="category-select">
-                    <div class="category-tag ${transaction.hasRule ? 'has-rule' : ''} ${transaction.confirmed ? 'confirmed' : ''}" 
-                         data-id="${transaction.id}">${transaction.Category || 'Select Category'}</div>
-                </div>
-                <button class="confirm-button ${transaction.confirmed ? 'confirmed' : ''}" 
-                        onclick="toggleConfirm(event, '${transaction.id}', this)">
-                    ${transaction.confirmed ? 'Unconfirm' : 'Confirm'}
-                </button>
-            </div>
-        `;
-
-        const categoryTag = card.querySelector('.category-tag');
-        if (categoryTag && !transaction.confirmed) {
-            categoryTag.addEventListener('click', function(e) {
-                console.log('Category tag clicked');
-                e.stopPropagation();
-                showCategoryDropdown(this, transaction.id);
-            });
-        }
-
-        container.appendChild(card);
-    });
-}
 
 function updateLastUpdatedDate() {
     const lastUpdatedElement = document.getElementById('lastUpdatedDate');
@@ -182,73 +272,8 @@ function updateLastUpdatedDate() {
     }
 }
 
-function initializeMonthDropdown() {
-    const monthOptions = document.getElementById('monthOptions');
-    if (!monthOptions) return;
 
-    const months = new Set();
-    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
-                       'July', 'August', 'September', 'October', 'November', 'December'];
-    
-    months.add('All Months');
 
-    transactions.forEach(transaction => {
-        const dateParts = transaction.Date.split('/');
-        if (dateParts.length === 3) {
-            const monthIndex = parseInt(dateParts[0]) - 1;
-            const year = '20' + dateParts[2];
-            const monthYear = `${monthNames[monthIndex]}, ${year}`;
-            months.add(monthYear);
-        }
-    });
-
-    monthOptions.innerHTML = '';
-    Array.from(months).forEach(month => {
-        monthOptions.innerHTML += `<div data-value="${month}">${month}</div>`;
-    });
-
-    const selectedElement = document.getElementById('selectedMonth');
-    if (selectedElement) {
-        selectedElement.addEventListener('click', function() {
-            monthOptions.classList.toggle('show');
-        });
-
-        document.addEventListener('click', function(e) {
-            if (!e.target.closest('.custom-select')) {
-                monthOptions.classList.remove('show');
-            }
-        });
-
-        monthOptions.querySelectorAll('div').forEach(option => {
-            option.addEventListener('click', function() {
-                selectedElement.textContent = this.textContent;
-                monthOptions.classList.remove('show');
-                filterByMonth();
-            });
-        });
-    }
-}
-
-function filterByMonth() {
-    const selectedMonth = document.getElementById('selectedMonth').textContent;
-    
-    if (selectedMonth === 'All Months') {
-        displayTransactions(transactions);
-        return;
-    }
-
-    const [monthName, year] = selectedMonth.split(', ');
-    const monthIndex = ['January', 'February', 'March', 'April', 'May', 'June', 
-                       'July', 'August', 'September', 'October', 'November', 'December']
-                       .indexOf(monthName) + 1;
-    
-    const filteredTransactions = transactions.filter(transaction => {
-        const [month, , transactionYear] = transaction.Date.split('/');
-        return parseInt(month) === monthIndex && '20' + transactionYear === year;
-    });
-
-    displayTransactions(filteredTransactions);
-}
 
 function toggleConfirm(event, transactionId, button) {
     event.stopPropagation();
@@ -387,60 +412,47 @@ function generateCategoryOptions() {
     return options;
 }
 
-function showEditPanel(transaction) {
+function showEditPanel(transactions) {
     const editPanel = document.querySelector('.edit-panel');
     const editPanelContent = document.querySelector('.edit-panel-content');
-    
-    editPanelContent.innerHTML = '';
-    
-    const dateParts = transaction.Date.split('/');
-    const date = new Date(2000 + parseInt(dateParts[2]), parseInt(dateParts[0]) - 1, parseInt(dateParts[1]));
-    const formattedDate = date.toLocaleDateString('en-US', {
-        month: 'long',
-        day: 'numeric',
-        year: 'numeric'
-    });
 
-    const amount = parseFloat(transaction.Amount);
-    const formattedAmount = amount.toLocaleString('en-US', {
-        style: 'currency',
-        currency: 'USD'
-    });
+    editPanelContent.innerHTML = ''; // Clear previous content
 
-    editPanelContent.innerHTML = `
-        <div id="editPanelContent">
+    console.log('Showing Edit Panel for Transactions:', transactions); // Log transactions being shown
+
+    if (transactions.length > 1) {
+        // If multiple transactions are selected
+        editPanelContent.innerHTML = `
+            <h2 id="editDescription">Multiple Transactions</h2>
+            <p>Please edit the selected transactions as needed.</p>
+        `;
+    } else {
+        // If only one transaction is selected
+        const transaction = transactions[0];
+        const dateParts = transaction.Date.split('/');
+        const date = new Date(2000 + parseInt(dateParts[2]), parseInt(dateParts[0]) - 1, parseInt(dateParts[1]));
+        const formattedDate = date.toLocaleDateString('en-US', {
+            month: 'long',
+            day: 'numeric',
+            year: 'numeric'
+        });
+
+        const amount = parseFloat(transaction.Amount);
+        const formattedAmount = amount.toLocaleString('en-US', {
+            style: 'currency',
+            currency: 'USD'
+        });
+
+        editPanelContent.innerHTML = `
             <h2 id="editDescription">${transaction.Description}</h2>
             <span id="editDate">${formattedDate}</span>
             <span id="editAmount" class="${amount >= 0 ? 'positive' : ''}">${formattedAmount}</span>
-            
-            <div class="category-select">
-                <div class="select-selected">${transaction.Category || 'Select Category'}</div>
-                <div class="select-items">
-                    ${generateCategoryOptions()}
-                </div>
-            </div>
-
-            <div id="btmButtons">
-                <button id="closePanelButton">Close</button>
-                <button id="saveChangesButton">Save Changes</button>
-            </div>
-        </div>
-    `;
-
-    const closeButton = document.getElementById('closePanelButton');
-    const saveButton = document.getElementById('saveChangesButton');
-    const newCloseButton = closeButton.cloneNode(true);
-    const newSaveButton = saveButton.cloneNode(true);
-    closeButton.parentNode.replaceChild(newCloseButton, closeButton);
-    saveButton.parentNode.replaceChild(newSaveButton, saveButton);
-
-    newCloseButton.addEventListener('click', closeEditPanel);
-    newSaveButton.addEventListener('click', () => saveChanges(transaction.id));
-
-    initializeEditPanelCategorySelector(transaction.id);
+        `;
+    }
 
     editPanel.classList.add('open');
 }
+
 
 function initializeEditPanelCategorySelector(transactionId) {
     const selectSelected = document.querySelector('.select-selected');
@@ -498,11 +510,22 @@ function saveTransactionsToFirebase(transactions) {
 }
 
 function initializeRealtimeUpdates() {
+    console.log('Initializing real-time updates...');
+
+    // Ensure transactionsRef is defined before using it
+    if (!transactionsRef) {
+        console.error('transactionsRef is not defined. Cannot initialize real-time updates.');
+        return; // Exit if transactionsRef is not defined
+    }
+
     transactionsRef.on('value', (snapshot) => {
         if (snapshot.exists()) {
             transactions = snapshot.val();
-            displayTransactions(transactions);
-            initializeMonthDropdown();
+            console.log('Transactions updated:', transactions);
+            // Call any function to update the UI or process transactions
+            displayTransactions(transactions); // Example function to display transactions
+        } else {
+            console.log('No transactions found.');
         }
     });
 
@@ -527,6 +550,43 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
         console.error('Could not find file input element with id "csvFileInput"');
     }
-    
-    initializeRealtimeUpdates();
+
+    // Add event listeners to individual transaction checkboxes
+    const transactionCheckboxes = document.querySelectorAll('.transaction-checkbox');
+    console.log('Transaction Checkboxes Found:', transactionCheckboxes.length); // Log the number of checkboxes found
+    transactionCheckboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', updateEditPanel);
+        console.log('Added change event listener to checkbox with ID:', checkbox.dataset.transactionId); // Log each checkbox ID
+    });
+
+    // Add an event listener to the select all checkbox
+    document.getElementById('selectAllCheckbox').addEventListener('change', function() {
+        const checkboxes = document.querySelectorAll('.transaction-checkbox');
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = this.checked;
+            // Trigger change event to update the edit panel
+            checkbox.dispatchEvent(new Event('change'));
+        });
+    });
 });
+
+// Function to update the edit panel based on selected transactions
+function updateEditPanel() {
+    const selectedTransactions = Array.from(transactionCheckboxes)
+        .filter(checkbox => checkbox.checked)
+        .map(checkbox => {
+            const transactionId = checkbox.dataset.transactionId; // Assuming each checkbox has a data attribute for transaction ID
+            const transaction = transactions.find(t => t.id === transactionId);
+            console.log(`Checkbox for transaction ID ${transactionId} is checked:`, transaction); // Log each checked transaction
+            return transaction;
+        });
+
+    console.log('Selected Transactions:', selectedTransactions); // Log selected transactions
+
+    if (selectedTransactions.length > 0) {
+        showEditPanel(selectedTransactions); // Pass the array of selected transactions
+    } else {
+        closeEditPanel(); // Close the panel if no transactions are selected
+    }
+}
+

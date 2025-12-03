@@ -82,10 +82,7 @@ body {
     padding-right: 24px;
 }
 
-.transaction-amount.positive {
-    color: var(--text-success);
-    
-}
+
 
 
 
@@ -118,11 +115,21 @@ body {
     
 }
 
+.transaction-amount.positive {
+    color: var(--text-success);
+    /* Add !important to ensure it can be overridden */
+    /* !important is generally not recommended, but can be used if necessary */
+    /* color: var(--text-success) !important; */
+}
+
 /* Confirmed state */
 .confirmed .transaction-content {
     color: var(--text-disabled);
-    
-    
+    /* Increase specificity to override the positive amount */
+}
+
+.confirmed .transaction-amount.positive {
+    color: var(--text-disabled); /* This will override the positive color */
 }
 
 .confirmed .confirm-button {
@@ -988,3 +995,75 @@ body {
     background-color: var(--fill-hover);
 }
 
+/* Add this new class for invalid categories */
+.category-select.invalid .category-tag {
+    background-color: var(--fill-error-weak); /* Change to your desired color */
+    border-color: var(--stroke-error-strong); /* Change to your desired border color */
+    color: var(--text-error);
+}
+
+.modal {
+    display: none; /* Hidden by default */
+    position: fixed; 
+    z-index: 1; 
+    left: 0;
+    top: 0;
+    width: 100%; 
+    height: 100%; 
+    overflow: auto; 
+    background-color: rgb(0,0,0); 
+    background-color: rgba(0,0,0,0.4); 
+}
+
+.modal-content {
+    background-color: #fefefe;
+    margin: 15% auto; 
+    padding: 20px;
+    border: 1px solid #888;
+    width: 80%; 
+}
+
+.close-button {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+}
+
+.close-button:hover,
+.close-button:focus {
+    color: black;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.custom-checkbox {
+    display: flex;
+    align-items: center;
+}
+
+.custom-checkbox input[type="checkbox"] {
+    appearance: none; /* Remove default checkbox styling */
+    width: 20px; /* Set width */
+    height: 20px; /* Set height */
+    border: 2px solid var(--stroke-strong); /* Use your design token for border */
+    border-radius: 4px; /* Rounded corners */
+    background-color: var(--background-base); /* Use your design token for background */
+    cursor: pointer; /* Pointer cursor on hover */
+    transition: background-color 0.3s, border-color 0.3s; /* Smooth transition */
+}
+
+.custom-checkbox input[type="checkbox"]:checked {
+    background-color: var(--fill-strong); /* Background color when checked */
+    border-color: var(--stroke-weak); /* Border color when checked */
+}
+
+.custom-checkbox input[type="checkbox"]:checked::after {
+    content: ''; /* Add a checkmark or icon */
+    display: block;
+    width: 10px; /* Adjust size */
+    height: 10px; /* Adjust size */
+    background-color: var(--text-inverse-strong); /* Use your design token for checkmark color */
+    border-radius: 2px; /* Rounded corners for checkmark */
+    margin: 3px; /* Center the checkmark */
+}

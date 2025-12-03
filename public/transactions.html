@@ -29,6 +29,14 @@
         </div>
     </nav>
 
+    <div id="columnMappingModal" class="modal">
+        <div class="modal-content">
+            <span class="close-button" onclick="closeColumnMappingModal()">&times;</span>
+            <h2>Match CSV Columns</h2>
+            <div id="mappingContainer"></div>
+            <button id="saveMappingButton">Save Mapping</button>
+        </div>
+    </div>
     
     <div class="mainContent">
         <div class="top-controls">
@@ -51,6 +59,12 @@
         <div class="mainTable">
             <div class="transactions-wrapper">
                 <div class="transaction-header">
+                    <div class="header-checkbox">
+                        <label class="custom-checkbox">
+                            <input type="checkbox" id="selectAllCheckbox">
+                            <span class="checkmark"></span>
+                        </label>
+                    </div>
                     <div class="header-date">Date</div>
                     <div class="header-description">Description</div>
                     <div class="header-amount">Amount</div>
