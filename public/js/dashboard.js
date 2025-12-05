@@ -44,26 +44,29 @@ let isDashboardInitialized = false; // Flag to track initialization
 
 // Function to initialize the dashboard
 function initializeDashboard() {
+    console.log('initializeDashboard called');
     if (isDashboardInitialized) {
         console.log('Dashboard is already initialized.');
         return; // Exit if already initialized
     }
 
-    
-    
     // Ensure Firebase references are defined
     if (!transactionsRef || !categoriesRef) {
         console.error('Required Firebase references are missing.');
         return; // Exit if references are missing
     }
 
+    console.log('Loading transactions from Firebase...');
     transactionsRef.once('value')
         .then((snapshot) => {
+            console.log('Transactions snapshot received, exists:', snapshot.exists());
             if (snapshot.exists()) {
                 transactions = snapshot.val(); // Ensure transactions are assigned here
-                
+                console.log('Transactions loaded:', transactions.length, 'transactions');
+
                 // Proceed with processing transactions
                 displayTransactions(transactions);
+                console.log('Calling updateCharts after transaction load...');
                 updateCharts(); // Call to update charts after loading transactions
             } else {
                 console.log('No transactions found.');
@@ -99,22 +102,21 @@ function initializeRealtimeUpdates() {
 
 // Function to update charts based on the selected month and year
 function updateCharts() {
-    
-    
+    console.log('updateCharts called');
+    console.log('Current transactions count:', transactions ? transactions.length : 'undefined');
+    console.log('Categories ref exists:', !!categoriesRef);
+
     categoriesRef.once('value')
         .then((snapshot) => {
+            console.log('Categories snapshot received, exists:', snapshot.exists());
             if (!snapshot.exists()) {
                 console.log('No categories found, setting up default categories');
                 return saveCategoriesToFirebase(defaultCategories);
             } else {
-                
                 categories = snapshot.val(); // Ensure categories are set from Firebase
-                
-                
-      
+                console.log('Categories loaded:', categories.length, 'categories');
 
-    
-    if (!Array.isArray(transactions) || transactions.length === 0) {
+                if (!Array.isArray(transactions) || transactions.length === 0) {
         console.error('No transactions available to update charts.');
         return;
     }
@@ -126,6 +128,7 @@ function updateCharts() {
     }
 
     const selectedMonthYear = selectedMonthElement.textContent || selectedMonthElement.value;
+    console.log('Selected month/year from DOM:', selectedMonthYear);
     if (!selectedMonthYear) {
         console.error('No value in selected month element.');
         return;
@@ -134,37 +137,31 @@ function updateCharts() {
     
 
     const [monthName, year] = selectedMonthYear.split(', ');
-    const monthIndex = ['January', 'February', 'March', 'April', 'May', 'June', 
+    const monthIndex = ['January', 'February', 'March', 'April', 'May', 'June',
                         'July', 'August', 'September', 'October', 'November', 'December']
                         .indexOf(monthName) + 1;
 
+    console.log('Filtering for month:', monthName, 'index:', monthIndex, 'year:', year);
+
     const filteredTransactions = transactions.filter((transaction) => {
-        // Log the raw date value for debugging
-        
-
-        // Attempt to parse the date
-        const transactionDate = new Date(transaction.Date); // Ensure transaction.Date is in a valid format
-       
-        
-        // Check if the transactionDate is valid
-        if (isNaN(transactionDate)) {
-            console.error('Invalid transaction date:', transaction.Date);
-            return false; // Exclude invalid dates from filtering
-        }
-
         // Check if "All Months" is selected
         if (selectedMonthYear === "All Months") {
             return true; // Include all transactions if "All Months" is selected
         }
 
-        // Log the month and year being compared
-        
+        // Use the same date filtering logic as filterByMonth() in init.js
+        const [month, day, transactionYear] = transaction.Date.split('/');
+        // Ensure the year is in the correct format (two digits to four digits)
+        const formattedYear = year.slice(-2); // Get the last two digits of the year
 
-        return (
-            transactionDate.getMonth() + 1 === monthIndex &&
-            transactionDate.getFullYear() === parseInt(year, 10)
-        );
+        const matches = parseInt(month) === monthIndex && transactionYear === formattedYear;
+        if (matches) {
+            console.log('Transaction matches:', transaction.Date, transaction.Category, transaction.Amount);
+        }
+        return matches;
     });
+
+    console.log('Filtered transactions count:', filteredTransactions.length);
 
     
 
@@ -176,13 +173,17 @@ function updateCharts() {
 
     
 
-    createmainSpending(filteredTransactions, categories);
-    createTransactionStatusDonutChart(filteredTransactions, categories);
-    createyearlyBudgetChart(transactions, categories);
-    createoverBudgetChart(filteredTransactions);
-}
-})
-
+                console.log('Calling chart creation functions...');
+                createmainSpending(filteredTransactions, categories);
+                createTransactionStatusDonutChart(filteredTransactions, categories);
+                createyearlyBudgetChart(transactions, categories);
+                createoverBudgetChart(filteredTransactions, categories);
+                console.log('Chart update completed');
+            }
+        })
+        .catch((error) => {
+            console.error('Error loading categories in updateCharts:', error);
+        });
 }
 
 // Function to create the main spending chart
@@ -270,19 +271,23 @@ function createmainSpending(transactions, categories) {
         .sort(([, a], [, b]) => b - a)
         .sort(([catA], [catB]) => catA === 'Uncategorized' ? 1 : catB === 'Uncategorized' ? -1 : 0);
 
-    // Define a color palette (12 colors for monthly variation)
+    // Define a cohesive color palette primarily using charcoal and clay variations
     const COLOR_PALETTE = [
-        '#FF006E',
-        '#8338EC',
-        '#3A86FF',
-        '#FFB703',
-        '#FB5607',
-        '#8ECAE6',
-        '#219EBC',
-        '#023047',
-        '#FFB703',
-        '#FB8500',
-
+        'hsl(220, 6%, 16%)',  // charcoal-dark (was navy-blue-dark)
+        'hsl(8, 73%, 57%)',   // clay-dark
+        'hsl(220, 5%, 25%)',  // charcoal-medium (was navy-blue-medium)
+        'hsl(8, 60%, 65%)',   // clay-medium
+        'hsl(220, 4%, 35%)',  // charcoal-light (was navy-blue-light)
+        'hsl(8, 50%, 75%)',   // clay-light
+        'hsl(165, 51%, 42%)', // spruce-dark (accent)
+        'hsl(42, 92%, 57%)',  // gold-dark (accent)
+        'hsl(220, 3%, 45%)',  // charcoal-light-medium (neutral)
+        'hsl(165, 40%, 50%)', // spruce-medium
+        'hsl(8, 65%, 70%)',   // clay-light-medium
+        'hsl(220, 4%, 20%)',  // charcoal-dark-medium (was navy-blue-dark-medium)
+        'hsl(42, 85%, 65%)',  // gold-medium
+        'hsl(165, 30%, 60%)', // spruce-light
+        'hsl(220, 3%, 30%)'   // charcoal-medium-dark
     ];
 
     const data = {
@@ -296,17 +301,29 @@ function createmainSpending(transactions, categories) {
                     // Cycle through palette colors
                     return COLOR_PALETTE[index % COLOR_PALETTE.length];
                 }),
-                borderColor: COLORS.border,
-                borderWidth: 1,
+                hoverBackgroundColor: sortedCategories.map((_, index) => {
+                    // Use 40% brightness for hover
+                    const baseColor = COLOR_PALETTE[index % COLOR_PALETTE.length];
+                    // Reduce saturation slightly and set brightness to 40%
+                    return baseColor.replace(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/, (match, h, s, l) => {
+                        const newSaturation = Math.max(25, parseInt(s) - 15); // Reduce saturation by 15%, minimum 25%
+                        return `hsl(${h}, ${newSaturation}%, 40%)`; // Fixed 40% brightness
+                    });
+                }),
+                borderRadius: {
+                    topLeft: 20,
+                    topRight: 20,
+                    bottomLeft: 20,
+                    bottomRight: 20
+                },
                 order: 2,
-                borderRadius: 10
             },
             {
                 type: 'line',
                 label: 'Budget',
                 data: sortedCategories.map(([category]) => categoryBudgets[category] || 0),
-                backgroundColor: 'var(--fill-error-strong)', // Use token for color
-                borderColor: 'var(--fill-error-strong)', // Use token for color
+                backgroundColor: 'hsl(220, 6%, 16%)', // charcoal-dark for budget line
+                borderColor: 'hsl(220, 6%, 16%)', // charcoal-dark for budget line
                 borderWidth: 4,
                 pointStyle: 'line',
                 pointBorderWidth: 4,
@@ -351,7 +368,10 @@ function createmainSpending(transactions, categories) {
                     display: false,
                     grid: {
                         display: false
-                    }
+                    },
+                    categoryPercentage: 1,
+                    barPercentage: 1,
+                    barThickness: 'flex'
                 },
                 y: {
                     grid: {
@@ -405,24 +425,24 @@ function createTransactionStatusDonutChart(transactions, budgetCategories) {
         }
     });
 
-    // Convert HSL to RGB
-    const fillStrongRgb = hslToRgb(230 / 360, 1, 0.08); // --fill-strong
-    const backgroundSunkenRgb = hslToRgb(230 / 360, 0.33, 0.97); // --background-sunken
-    const fillErrorStrongRgb = hslToRgb(0 / 360, 0.56, 0.5); // --fill-error-strong
-
     const data = {
         labels: ['Confirmed', 'Unconfirmed', 'Uncategorized'],
         datasets: [{
             data: [confirmedCount, unconfirmedCount, uncategorizedCount],
-            // Use RGB values
+            // Use clay color scheme
             backgroundColor: [
-                `rgb(${fillStrongRgb.join(',')})`, 
-                `rgb(${backgroundSunkenRgb.join(',')})`, 
-                `rgb(${fillErrorStrongRgb.join(',')})`
+                'hsl(8, 73%, 57%)',   // Confirmed - clay-dark
+                'hsl(220, 2%, 75%)',  // Unconfirmed - very light charcoal
+                'hsl(8, 50%, 75%)'    // Uncategorized - clay-light
+            ],
+            hoverBackgroundColor: [
+                'hsl(8, 58%, 40%)',   // Confirmed hover - 40% brightness
+                'hsl(220, 2%, 40%)',  // Unconfirmed hover - 40% brightness
+                'hsl(8, 35%, 40%)'    // Uncategorized hover - 40% brightness
             ],
             borderColor: 'white',
             borderWidth: 5,
-            borderRadius: 10
+            borderRadius: 20
         }]
     };
 
@@ -459,7 +479,11 @@ function createTransactionStatusDonutChart(transactions, budgetCategories) {
 
 function createyearlyBudgetChart(transactions, categories) {
     const ctx = document.getElementById('yearlyBudgetChart').getContext('2d');
-    
+
+    if (yearlyBudgetChart) {
+        yearlyBudgetChart.destroy();
+    }
+
     // Create a Set of all valid subcategory names
     const validSubcategories = new Set();
     categories.forEach(category => {
@@ -539,16 +563,23 @@ function createyearlyBudgetChart(transactions, categories) {
             {
                 label: 'Actual',
                 data: monthlySpending,
-                backgroundColor: '#FF006E',
+                backgroundColor: 'hsl(8, 73%, 57%)', // clay-dark
+                hoverBackgroundColor: 'hsl(8, 58%, 40%)', // 40% brightness clay
+                borderWidth: 0,
+                borderRadius: {
+                    topLeft: 20,
+                    topRight: 20,
+                    bottomLeft: 20,
+                    bottomRight: 20
+                },
                 type: 'bar',
                 order: 1,
-                borderRadius: 10
             },
             {
                 label: 'Budget',
                 data: Array(12).fill(totalBudget),
-                backgroundColor: 'rgba(255, 255, 255, 0.5)',
-                borderColor: 'var(--fill-error-strong)',
+                backgroundColor: 'hsl(8, 60%, 65%)', // clay-medium
+                borderColor: 'hsl(8, 60%, 65%)', // clay-medium
                 borderWidth: 2,
                 type: 'line',
                 fill: false,
@@ -586,26 +617,38 @@ function createyearlyBudgetChart(transactions, categories) {
                 x: {
                     grid: {
                         display: false
-                    }
+                    },
+                    categoryPercentage: 1,
+                    barPercentage: 1,
+                    barThickness: 'flex'
                 }
             }
         }
     });
 }
 
-function createoverBudgetChart(transactions) {
+function createoverBudgetChart(transactions, categories) {
+    console.log('createoverBudgetChart called with', transactions.length, 'transactions');
     const ctx = document.getElementById('overBudgetChart').getContext('2d');
-    
+
     if (overBudgetChart) {
         overBudgetChart.destroy();
     }
 
-    // 1. Get all subcategories with their budgets
+    // Get the selected month/year to calculate period-adjusted budgets
+    const selectedMonthElement = document.getElementById('selectedMonth');
+    const selectedMonthYear = selectedMonthElement.textContent || selectedMonthElement.value;
+    const isAllMonths = selectedMonthYear === "All Months";
+
+    // Calculate period multiplier (12 for annual, 1 for monthly)
+    const periodMultiplier = isAllMonths ? 12 : 1;
+
+    // 1. Get all subcategories with their period-adjusted budgets
     const subcategoryBudgets = {};
     categories.forEach(category => {
         if (!category.isSystem) {
             category.subcategories.forEach(sub => {
-                subcategoryBudgets[sub.name.trim().toLowerCase()] = sub.amount || 0;
+                subcategoryBudgets[sub.name.trim().toLowerCase()] = (sub.amount || 0) * periodMultiplier;
             });
         }
     });
@@ -620,7 +663,7 @@ function createoverBudgetChart(transactions) {
         }
     });
 
-    // 3. Calculate over-budget amounts
+    // 3. Calculate over-budget amounts and get top 10
     const overBudgetData = [];
     Object.entries(subcategorySpending).forEach(([subcategory, actual]) => {
         const budget = subcategoryBudgets[subcategory];
@@ -629,27 +672,94 @@ function createoverBudgetChart(transactions) {
                 subcategory: subcategory,
                 overAmount: actual - budget,
                 actual: actual,
-                budget: budget
+                budget: budget,
+                monthlyBudget: budget / periodMultiplier // Store original monthly budget for display
             });
         }
     });
 
-    // 4. Sort and get top 5
+    // 4. Sort and get top 10 over-budget subcategories
     const topOverBudget = overBudgetData
         .sort((a, b) => b.overAmount - a.overAmount)
-        .slice(0, 5);
+        .slice(0, 10);
 
-    console.log('Top over-budget subcategories:', topOverBudget);
+    // Create category-to-color mapping based on main spending chart logic
+    // Get main categories and their budget totals (same logic as main spending chart)
+    const mainCategoryBudgets = {};
+    categories.forEach(cat => {
+        if (cat.name !== "Hide from Budget") {
+            mainCategoryBudgets[cat.name] = cat.subcategories.reduce((sum, sub) => sum + (sub.amount || 0), 0) * periodMultiplier;
+        }
+    });
+    mainCategoryBudgets['Uncategorized'] = 0;
+
+    // Sort categories the same way as main spending chart (by budget amount)
+    const sortedMainCategories = Object.entries(mainCategoryBudgets)
+        .filter(([cat]) => cat !== "Hide from Budget")
+        .sort(([, a], [, b]) => b - a)
+        .sort(([catA], [catB]) => catA === 'Uncategorized' ? 1 : catB === 'Uncategorized' ? -1 : 0);
+
+    // Create color mapping for main categories primarily using charcoal and clay
+    const COLOR_PALETTE = [
+        'hsl(220, 6%, 16%)',  // charcoal-dark (was navy-blue-dark) (primary)
+        'hsl(8, 73%, 57%)',   // clay-dark (primary)
+        'hsl(220, 5%, 25%)',  // charcoal-medium (was navy-blue-medium)
+        'hsl(8, 60%, 65%)',   // clay-medium
+        'hsl(220, 4%, 35%)',  // charcoal-light (was navy-blue-light)
+        'hsl(8, 50%, 75%)',   // clay-light
+        'hsl(165, 51%, 42%)', // spruce-dark (accent)
+        'hsl(42, 92%, 57%)',  // gold-dark (accent)
+        'hsl(220, 6%, 16%)',  // charcoal-dark (neutral)
+        'hsl(165, 40%, 50%)', // spruce-medium
+        'hsl(42, 85%, 65%)',  // gold-medium
+        'hsl(220, 5%, 25%)',  // charcoal-medium
+        'hsl(165, 30%, 60%)', // spruce-light
+        'hsl(42, 78%, 75%)',  // gold-light
+        'hsl(220, 4%, 35%)'   // charcoal-light
+    ];
+
+    const categoryColorMap = {};
+    sortedMainCategories.forEach(([category], index) => {
+        categoryColorMap[category] = COLOR_PALETTE[index % COLOR_PALETTE.length];
+    });
+
+    // Find parent category for each subcategory and assign color
+    const subcategoryColors = topOverBudget.map(item => {
+        // Find the parent category for this subcategory
+        const parentCategory = categories.find(cat =>
+            cat.subcategories.some(sub => sub.name.trim().toLowerCase() === item.subcategory.toLowerCase())
+        );
+
+        if (parentCategory) {
+            return categoryColorMap[parentCategory.name] || COLOR_PALETTE[0];
+        } else {
+            // If no parent found, use the first color
+            return COLOR_PALETTE[0];
+        }
+    });
 
     const data = {
-        labels: topOverBudget.map(item => 
-            `${item.subcategory}\n($${item.actual.toLocaleString()} vs $${item.budget.toLocaleString()})`
+        labels: topOverBudget.map(item =>
+            `${item.subcategory.charAt(0).toUpperCase() + item.subcategory.slice(1)}\n($${item.actual.toLocaleString()} vs $${item.monthlyBudget.toLocaleString()}/mo)`
         ),
         datasets: [{
             label: 'Over Budget Amount',
             data: topOverBudget.map(item => item.overAmount),
-            backgroundColor: 'var(--fill-error-strong)',
-            borderRadius: 10
+            backgroundColor: subcategoryColors,
+            hoverBackgroundColor: subcategoryColors.map(color => {
+                // Use 40% brightness for hover
+                return color.replace(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/, (match, h, s, l) => {
+                    const newSaturation = Math.max(25, parseInt(s) - 15); // Reduce saturation by 15%, minimum 25%
+                    return `hsl(${h}, ${newSaturation}%, 40%)`; // Fixed 40% brightness
+                });
+            }),
+            borderWidth: 0,
+            borderRadius: {
+                topLeft: 20,
+                topRight: 20,
+                bottomLeft: 20,
+                bottomRight: 20
+            }
         }]
     };
 
@@ -667,16 +777,44 @@ function createoverBudgetChart(transactions) {
                         title: (context) => context[0].label.split('\n')[0],
                         label: (context) => [
                             `Actual: $${topOverBudget[context.dataIndex].actual.toLocaleString()}`,
-                            `Budget: $${topOverBudget[context.dataIndex].budget.toLocaleString()}`,
+                            `Monthly Budget: $${topOverBudget[context.dataIndex].monthlyBudget.toLocaleString()}`,
                             `Over: $${context.parsed.x.toLocaleString()}`
                         ]
+                    },
+                    titleFont: {
+                        family: 'Figtree'
+                    },
+                    bodyFont: {
+                        family: 'Figtree'
                     }
                 }
             },
             scales: {
                 x: {
                     beginAtZero: true,
-                    title: { display: true, text: 'Over Budget Amount' }
+                    display: false,
+                    grid: {
+                        display: false
+                    },
+                    categoryPercentage: 1,
+                    barPercentage: 1,
+                    barThickness: 'flex'
+                },
+                y: {
+                    grid: {
+                        display: false
+                    },
+                    ticks: {
+                        color: 'var(--text-strong)',
+                        font: {
+                            family: 'Figtree',
+                            size: 12,
+                            weight: 500
+                        }
+                    },
+                    border: {
+                        display: false
+                    }
                 }
             }
         }

@@ -49,13 +49,23 @@
                 <div class="form-group">
                     <label for="categoryName">Name</label>
                     <input type="text" id="categoryName" placeholder="Enter category name">
+                    <div id="categoryNameError" class="error-message" style="display: none;"></div>
                 </div>
                 <div class="form-group" id="amountGroup">
                     <label for="categoryAmount">Amount</label>
                     <input type="number" id="categoryAmount" placeholder="0.00">
                 </div>
                 <div class="modal-buttons">
-                    <button class="delete-btn" id="deleteButton" onclick="deleteCategory()">Delete</button>
+                    <div id="deleteButtonContainer">
+                        <button class="delete-btn" id="deleteButton">Delete</button>
+                        <div class="delete-confirmation" id="deleteConfirmation">
+                            <span class="delete-confirmation-text">Are you sure?</span>
+                            <div class="delete-confirmation-buttons">
+                                <button class="cancel-btn" id="deleteCancelBtn">Cancel</button>
+                                <button class="delete-yes-btn" id="deleteYesBtn">Yes, Delete</button>
+                            </div>
+                        </div>
+                    </div>
                     <div class="right-buttons">
                         <button class="cancel-btn" onclick="closeModal()">Cancel</button>
                         <button class="save-btn" onclick="saveCategory()">Save</button>

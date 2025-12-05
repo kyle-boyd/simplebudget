@@ -53,6 +53,12 @@ firebase.auth().onAuthStateChanged((user) => {
 
 // Event listener for DOM content load
 document.addEventListener('DOMContentLoaded', () => {
+    // Set sticky positioning immediately
+    updateStickyPositioning();
+    
+    // Update on window resize
+    window.addEventListener('resize', updateStickyPositioning);
+    
     // Other initialization logic can go here
 
     // Initialize Firebase Authentication state
@@ -65,7 +71,8 @@ document.addEventListener('DOMContentLoaded', () => {
             
             initializeCategories();
             
-            
+            // Set sticky positioning again after content loads
+            setTimeout(updateStickyPositioning, 200);
 
             const dashPage = ['/dashboard.html'];
                 if (dashPage.includes(window.location.pathname)) {
@@ -83,6 +90,26 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 });
+
+// Function to update sticky positioning based on top-controls height
+function updateStickyPositioning() {
+    // Only run on transactions page
+    if (!document.querySelector('.top-controls')) {
+        return;
+    }
+    
+    requestAnimationFrame(() => {
+        const topControls = document.querySelector('.top-controls');
+        
+        if (topControls) {
+            const topControlsHeight = topControls.offsetHeight;
+            // Set CSS variable on document root for use in CSS
+            document.documentElement.style.setProperty('--top-controls-height', `${topControlsHeight}px`);
+            
+            console.log('Sticky positioning updated:', topControlsHeight);
+        }
+    });
+}
 
 
 // Redirect to login if needed
@@ -151,6 +178,13 @@ function displayCategories() {
     if (!container) return;
     
     container.innerHTML = '';
+    
+    // Add new category button at the top
+    const newCategoryBtn = document.createElement('button');
+    newCategoryBtn.className = 'new-category-btn';
+    newCategoryBtn.innerHTML = '<span class="plus-icon">+</span>New Category';
+    newCategoryBtn.onclick = () => showAddCategoryModal('parent');
+    container.appendChild(newCategoryBtn);
     
     // Ensure categories is an array
     if (!Array.isArray(categories)) {
@@ -276,13 +310,6 @@ function displayCategories() {
                 console.error('Error adding system category:', error);
             });
     }
-
-    // Add new category button at the bottom
-    const newCategoryBtn = document.createElement('button');
-    newCategoryBtn.className = 'new-category-btn';
-    newCategoryBtn.innerHTML = '<span class="plus-icon">+</span>New Category';
-    newCategoryBtn.onclick = () => showAddCategoryModal('parent');
-    container.appendChild(newCategoryBtn);
     
 }
 
@@ -424,6 +451,8 @@ function initializePage() {
             displayTransactions(transactions);
             // Call the function to initialize the dropdown
             initMonthDropdown();
+            // Update sticky positioning after content is loaded
+            setTimeout(updateStickyPositioning, 100);
         })
         .catch(error => {
             console.error('Error initializing page:', error);
@@ -432,16 +461,18 @@ function initializePage() {
 
 // Month dropdown initialization
 function initMonthDropdown() {
-    
-    
+    console.log('initMonthDropdown called');
+
     // Verify if the elements are being selected correctly
     const monthOptions = document.getElementById('monthOptions');
     const selectedElement = document.getElementById('selectedMonth');
 
+    console.log('Month dropdown elements found:', !!monthOptions, !!selectedElement);
+
     if (!monthOptions) {
-        
+        console.error('monthOptions element not found');
     } else {
-        
+        console.log('monthOptions found');
     }
 
     
@@ -478,13 +509,24 @@ function initMonthDropdown() {
     });
 
     monthOptions.querySelectorAll('div').forEach((option) => {
-        
+
         option.addEventListener('click', () => {
-            
+
             selectedElement.textContent = option.textContent; // Update selected month
             monthOptions.classList.remove('show'); // Hide dropdown after selection
-            filterByMonth();
-            console.log('Click');
+            console.log('Month selected:', option.textContent);
+            console.log('Selected element text:', selectedElement.textContent);
+
+            // Call updateCharts directly instead of filterByMonth for dashboard
+            const currentPage = window.location.pathname;
+            console.log('Page path:', currentPage);
+            if (currentPage.includes('dashboard.html')) {
+                console.log('On dashboard page, calling updateCharts()');
+                updateCharts();
+            } else {
+                console.log('Not on dashboard page, calling filterByMonth()');
+                filterByMonth();
+            }
         });
     });
 
@@ -516,11 +558,6 @@ function filterByMonth() {
     });
 
     displayTransactions(filteredTransactions);
-    
-    const currentPage = window.location.pathname;
-    if (currentPage.includes('dashboard.html')) {
-        updateCharts(filteredTransactions); // Call updateCharts only on dashboard.html
-    }
 }
 
 
@@ -560,4 +597,16 @@ function checkCategoriesExistence() {
         console.log('No categoriess');
     }
 }
+
+// Run immediately when script loads (for cases where DOMContentLoaded already fired)
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', updateStickyPositioning);
+} else {
+    // DOM is already loaded, run immediately
+    updateStickyPositioning();
+}
+
+// Also run after a short delay to catch any dynamic content
+setTimeout(updateStickyPositioning, 100);
+setTimeout(updateStickyPositioning, 500);
 
