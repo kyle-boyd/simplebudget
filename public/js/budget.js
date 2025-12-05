@@ -17,6 +17,7 @@ function showAddCategoryModal(type, parentId = null) {
     const modalTitle = document.getElementById('modalTitle');
     const deleteButton = document.getElementById('deleteButton');
     const amountGroup = document.getElementById('amountGroup');
+    const errorMessage = document.getElementById('categoryNameError');
     
     modal.style.display = 'block';
     modalTitle.textContent = type === 'parent' ? 'Add Category' : 'Add Sub-Category';
@@ -25,8 +26,19 @@ function showAddCategoryModal(type, parentId = null) {
     document.getElementById('categoryName').value = '';
     document.getElementById('categoryAmount').value = '';
     
+    // Clear any error messages
+    if (errorMessage) {
+        errorMessage.style.display = 'none';
+        errorMessage.textContent = '';
+    }
+    
     // Hide delete button for new categories
     deleteButton.style.display = 'none';
+    // Reset delete confirmation state
+    const deleteConfirmation = document.getElementById('deleteConfirmation');
+    if (deleteConfirmation) {
+        deleteConfirmation.classList.remove('show');
+    }
     
     // Show amount field only for subcategories
     amountGroup.style.display = type === 'parent' ? 'none' : 'block';
@@ -48,6 +60,7 @@ function showEditModal(categoryId, isSubcategory = false) {
     const modalTitle = document.getElementById('modalTitle');
     const deleteButton = document.getElementById('deleteButton');
     const amountGroup = document.getElementById('amountGroup');
+    const errorMessage = document.getElementById('categoryNameError');
     
     let category;
     if (isSubcategory) {
@@ -84,6 +97,16 @@ function showEditModal(categoryId, isSubcategory = false) {
     modalTitle.textContent = isSubcategory ? 'Edit Sub-Category' : 'Edit Category';
     deleteButton.style.display = 'block';
     
+    // Reset delete confirmation state
+    const deleteConfirmation = document.getElementById('deleteConfirmation');
+    deleteConfirmation.classList.remove('show');
+    
+    // Clear any error messages
+    if (errorMessage) {
+        errorMessage.style.display = 'none';
+        errorMessage.textContent = '';
+    }
+    
     // Show amount field only for subcategories
     amountGroup.style.display = isSubcategory ? 'block' : 'none';
     
@@ -94,10 +117,21 @@ function showEditModal(categoryId, isSubcategory = false) {
     }
     
     // Store category info for delete operation
-    deleteButton.onclick = () => showDeleteModal(categoryId, isSubcategory);
+    deleteButton.onclick = () => showDeleteConfirmation(categoryId, isSubcategory);
+    
+    // Set up confirmation buttons
+    const deleteCancelBtn = document.getElementById('deleteCancelBtn');
+    const deleteYesBtn = document.getElementById('deleteYesBtn');
+    
+    deleteCancelBtn.onclick = () => {
+        deleteConfirmation.classList.remove('show');
+        deleteButton.style.display = 'block';
+    };
+    
+    deleteYesBtn.onclick = () => confirmDeleteInline(categoryId, isSubcategory);
 }
 
-function showDeleteModal(categoryId, isSubcategory) {
+function showDeleteConfirmation(categoryId, isSubcategory) {
     const category = isSubcategory ? 
         categories.find(cat => cat.subcategories.some(sub => sub.id === categoryId)) :
         categories.find(cat => cat.id === categoryId);
@@ -108,27 +142,37 @@ function showDeleteModal(categoryId, isSubcategory) {
         return;
     }
 
-    const deleteModal = document.getElementById('deleteModal');
-    const warningText = document.getElementById('deleteWarningText');
+    const deleteButton = document.getElementById('deleteButton');
+    const deleteConfirmation = document.getElementById('deleteConfirmation');
     
-    // Store the category info in the modal's dataset for the confirm action
-    deleteModal.dataset.categoryId = categoryId;
-    deleteModal.dataset.isSubcategory = isSubcategory;
-    
-    // Update warning text based on what's being deleted
+    // Hide delete button and show confirmation
+    deleteButton.style.display = 'none';
+    deleteConfirmation.classList.add('show');
+}
+
+function confirmDeleteInline(categoryId, isSubcategory) {
     if (isSubcategory) {
-        const subcategory = categories.find(cat => 
-            cat.subcategories.some(sub => sub.id === categoryId)
-        )?.subcategories.find(sub => sub.id === categoryId);
-        
-        warningText.textContent = `Are you sure you want to delete the subcategory "${subcategory?.name}"? This action cannot be undone.`;
+        // Delete subcategory
+        categories = categories.map(category => ({
+            ...category,
+            subcategories: category.subcategories.filter(sub => sub.id !== categoryId)
+        }));
     } else {
-        const category = categories.find(cat => cat.id === categoryId);
-        warningText.textContent = `Are you sure you want to delete the category "${category?.name}" and all its subcategories? This action cannot be undone.`;
+        // Delete entire category
+        categories = categories.filter(category => category.id !== categoryId);
     }
     
-    // Show the delete modal
-    deleteModal.style.display = 'block';
+    // Save to Firebase instead of localStorage
+    saveCategoriesToFirebase(categories)
+        .then(() => {
+            // Close modal
+            closeModal();
+            // Refresh the display
+            displayCategories();
+        })
+        .catch(error => {
+            console.error('Error deleting category:', error);
+        });
 }
 
 function confirmDelete() {
@@ -163,21 +207,112 @@ function confirmDelete() {
 
 function closeModal() {
     const modal = document.getElementById('categoryModal');
+    const errorMessage = document.getElementById('categoryNameError');
+    
     modal.style.display = 'none';
     editingCategory = null;
+    
+    // Clear any error messages
+    if (errorMessage) {
+        errorMessage.style.display = 'none';
+        errorMessage.textContent = '';
+    }
+    
+    // Reset delete confirmation state (hide confirmation, but don't change delete button visibility)
+    const deleteConfirmation = document.getElementById('deleteConfirmation');
+    if (deleteConfirmation) {
+        deleteConfirmation.classList.remove('show');
+    }
 }
 
 function saveCategory() {
     const modal = document.getElementById('categoryModal');
     const nameInput = document.getElementById('categoryName');
     const amountInput = document.getElementById('categoryAmount');
+    const errorMessage = document.getElementById('categoryNameError');
     const type = modal.dataset.type;
     
     const name = nameInput.value.trim();
     const amount = amountInput.value ? parseFloat(amountInput.value) : 0;
     
+    // Hide any previous error messages
+    if (errorMessage) {
+        errorMessage.style.display = 'none';
+        errorMessage.textContent = '';
+    }
+    
     if (!name) {
+        if (errorMessage) {
+            errorMessage.textContent = 'Category name cannot be empty';
+            errorMessage.style.display = 'block';
+        }
         console.log('Category name cannot be empty');
+        return;
+    }
+
+    // Check for duplicate names
+    let isDuplicate = false;
+    let duplicateMessage = '';
+
+    if (editingCategory) {
+        // Editing existing category
+        if (type === 'parent') {
+            // Check if another parent category (excluding the one being edited) has the same name
+            const duplicate = categories.find(c => 
+                c.id !== editingCategory.id && 
+                c.name.toLowerCase() === name.toLowerCase()
+            );
+            if (duplicate) {
+                isDuplicate = true;
+                duplicateMessage = 'A category with this name already exists';
+            }
+        } else {
+            // Check if another subcategory in ANY parent (excluding the one being edited) has the same name
+            for (const parent of categories) {
+                const duplicate = parent.subcategories.find(s => 
+                    s.id !== editingCategory.id && 
+                    s.name.toLowerCase() === name.toLowerCase()
+                );
+                if (duplicate) {
+                    isDuplicate = true;
+                    duplicateMessage = 'A subcategory with this name already exists';
+                    break;
+                }
+            }
+        }
+    } else {
+        // Creating new category
+        if (type === 'parent') {
+            // Check if a parent category with the same name already exists
+            const duplicate = categories.find(c => 
+                c.name.toLowerCase() === name.toLowerCase()
+            );
+            if (duplicate) {
+                isDuplicate = true;
+                duplicateMessage = 'A category with this name already exists';
+            }
+        } else {
+            // Check if a subcategory with the same name already exists in ANY parent
+            for (const parent of categories) {
+                const duplicate = parent.subcategories.find(s => 
+                    s.name.toLowerCase() === name.toLowerCase()
+                );
+                if (duplicate) {
+                    isDuplicate = true;
+                    duplicateMessage = 'A subcategory with this name already exists';
+                    break;
+                }
+            }
+        }
+    }
+
+    // If duplicate found, show error and prevent saving
+    if (isDuplicate) {
+        if (errorMessage) {
+            errorMessage.textContent = duplicateMessage;
+            errorMessage.style.display = 'block';
+        }
+        console.log(duplicateMessage);
         return;
     }
 

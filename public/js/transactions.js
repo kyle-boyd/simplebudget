@@ -327,40 +327,55 @@ function showCategoryDropdown(tagElement, transactionId) {
         .then((snapshot) => {
             console.log('Loading categories for dropdown');
             const categories = snapshot.val() || defaultCategories;
-            
-            // Flatten all subcategories into a single array
-            const allSubcategories = categories.reduce((acc, category) => {
-                return acc.concat(category.subcategories.map(sub => ({
-                    ...sub,
-                    parentCategory: category.name
-                })));
-            }, []);
-            
-            // Sort subcategories alphabetically
-            allSubcategories.sort((a, b) => a.name.localeCompare(b.name));
-            
-            allSubcategories.forEach(sub => {
-                const subDiv = document.createElement('div');
-                subDiv.className = 'category-option';
-                subDiv.style.padding = '8px 16px';
-                subDiv.style.cursor = 'pointer';
-                subDiv.textContent = sub.name;
-                
-                subDiv.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    selectCategory(transactionId, sub.name, tagElement);
-                    dropdown.remove();
+
+            // Sort categories alphabetically by name
+            categories.sort((a, b) => a.name.localeCompare(b.name));
+
+            categories.forEach(category => {
+                // Add parent category header (not selectable)
+                const parentDiv = document.createElement('div');
+                parentDiv.className = 'category-parent';
+                parentDiv.style.padding = '8px 16px 4px 16px';
+                parentDiv.style.fontWeight = 'bold';
+                parentDiv.style.fontSize = '12px';
+                parentDiv.style.color = 'var(--text-weak)';
+                parentDiv.style.textTransform = 'uppercase';
+                parentDiv.style.letterSpacing = '0.5px';
+                parentDiv.style.borderBottom = '1px solid var(--stroke-weak)';
+                parentDiv.style.marginBottom = '4px';
+                parentDiv.style.pointerEvents = 'none'; // Make it not clickable
+                parentDiv.textContent = category.name;
+
+                dropdown.appendChild(parentDiv);
+
+                // Sort subcategories alphabetically
+                const sortedSubcategories = [...category.subcategories].sort((a, b) => a.name.localeCompare(b.name));
+
+                // Add subcategories
+                sortedSubcategories.forEach(sub => {
+                    const subDiv = document.createElement('div');
+                    subDiv.className = 'category-option';
+                    subDiv.style.padding = '6px 16px 6px 24px'; // Indent subcategories
+                    subDiv.style.cursor = 'pointer';
+                    subDiv.style.fontSize = 'var(--font-size-small)';
+                    subDiv.textContent = sub.name;
+
+                    subDiv.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        selectCategory(transactionId, sub.name, tagElement);
+                        dropdown.remove();
+                    });
+
+                    subDiv.addEventListener('mouseover', () => {
+                        subDiv.style.backgroundColor = 'var(--fill-hover)';
+                    });
+
+                    subDiv.addEventListener('mouseout', () => {
+                        subDiv.style.backgroundColor = 'transparent';
+                    });
+
+                    dropdown.appendChild(subDiv);
                 });
-                
-                subDiv.addEventListener('mouseover', () => {
-                    subDiv.style.backgroundColor = '#f5f5f5';
-                });
-                
-                subDiv.addEventListener('mouseout', () => {
-                    subDiv.style.backgroundColor = 'transparent';
-                });
-                
-                dropdown.appendChild(subDiv);
             });
 
             const rect = tagElement.getBoundingClientRect();

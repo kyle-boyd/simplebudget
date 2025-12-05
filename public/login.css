@@ -50,7 +50,7 @@ button {
     background-color: var(--fill-strong); /* Use token for button background */
     color: var(--fill-white);
     border: none;
-    border-radius: var(--corner-radius-8);
+    border-radius: 12px;
     cursor: pointer;
     width: 100%;
     margin-top: var(--spacing-12);

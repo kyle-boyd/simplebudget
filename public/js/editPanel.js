@@ -67,6 +67,17 @@ function showEditPanel(transaction) {
         }
     });
 
+    // Remove selected state from all transaction cards
+    document.querySelectorAll('.transaction-card.selected').forEach(card => {
+        card.classList.remove('selected');
+    });
+
+    // Add selected state to the clicked transaction card
+    const transactionCard = document.querySelector(`.transaction-card[data-id="${transaction.id}"]`);
+    if (transactionCard) {
+        transactionCard.classList.add('selected');
+    }
+
     // Open the panel
     editPanel.classList.add('open');
 }
