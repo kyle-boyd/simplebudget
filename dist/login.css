@@ -1,0 +1,85 @@
+/* login.css */
+
+@import url('./css/tokens.css');
+
+body {
+    font-family: var(--font-family-body);
+    background-color: var(--background-base);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+}
+
+.auth-container {
+    background: var(--fill-white);
+    padding: var(--spacing-24);
+    border: 1px solid var(--stroke-weak); /* Use token for border color */
+    border-radius: var(--corner-radius-24); /* Rounded corners */
+    
+    width: 400px; /* Set a fixed width for the container */
+}
+
+.form-container {
+    width: 100%; /* Ensure it takes full width of the container */
+}
+
+form {
+    display: flex;
+    flex-direction: column; /* Stack elements vertically */
+}
+
+label {
+    margin-bottom: var(--spacing-4); /* Space between label and input */
+    font-weight: bold; /* Make label text bold */
+}
+
+input {
+    margin-bottom: var(--spacing-12);
+    margin-top: var(--spacing-12);
+    padding: var(--spacing-12);
+    border: 1px solid var(--stroke-strong); /* Use token for input border color */
+    border-radius: var(--corner-radius-4);
+    width: 100%; /* Make input fill the width of the container */
+    box-sizing: border-box; /* Include padding and border in the element's total width */
+}
+
+button {
+    padding: var(--spacing-12);
+    background-color: var(--fill-strong); /* Use token for button background */
+    color: var(--fill-white);
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    width: 100%;
+    margin-top: var(--spacing-12);
+    margin-bottom: var(--spacing-12);
+}
+
+button:hover {
+    background: linear-gradient(to bottom, var(--fill-inverse-weak), var(--fill-inverse-weak)), 
+                linear-gradient(to bottom, var(--fill-strong), var(--fill-strong));
+    background-blend-mode: screen;
+}
+
+.google-auth {
+    margin: var(--spacing-10) 0;
+}
+
+p {
+    color: var(--text-weak);
+}
+
+a {
+    color: var(--text-strong); /* Use token for link color */
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+h2 {
+    font-size: var(--font-size-heading-1);
+}

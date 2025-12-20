@@ -1,0 +1,25 @@
+     <!DOCTYPE html>
+     <html lang="en">
+     <head>
+         <meta charset="UTF-8">
+         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+         <link rel="stylesheet" href="css/tokens.css">
+         <title>Test CSS Variables</title>
+     </head>
+     <body>
+         <script>
+             function logCSSVariable(variableName) {
+                 const tempElement = document.createElement('div');
+                 document.body.appendChild(tempElement);
+                 const computedStyle = getComputedStyle(tempElement);
+                 const value = computedStyle.getPropertyValue(variableName).trim();
+                 console.log(`${variableName}: ${value}`);
+                 document.body.removeChild(tempElement);
+             }
+
+             logCSSVariable('--fill-strong');
+             logCSSVariable('--background-sunken');
+             logCSSVariable('--fill-error-strong');
+         </script>
+     </body>
+     </html>

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login Page</title>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+  <script src="js/init.js" defer></script> <!-- Contains Firebase initialization -->
+  
+  <link rel="stylesheet" href="login.css">
+</head>
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Figtree:ital,wght@0,300..900;1,300..900&display=swap');
+    </style>
+<body>
+  <div id="auth-container" class="auth-container">
+    <form id="signup-form" style="display: none;">
+      <h2>Sign up</h2>
+      <p> Create an account</p>
+      <label for="signup-name">Name</label>
+      <input type="text" id="signup-name" placeholder="" required>
+      <label for="signup-username">Email</label>
+      <input type="text" id="signup-username" placeholder="" required>
+      <label for="signup-password">Password</label>
+      <input type="password" id="signup-password" placeholder="" required>
+      <button type="submit">Sign Up</button>
+      <div class="google-auth">
+          <button type="button" id="googleSignup">Sign Up with Google</button>
+      </div>
+      <p>Already have an account? <a href="#" id="showLogin">Login</a></p>
+    </form>
+
+    <form id="login-form" style="display: none;">
+        <h2>Welcome</h2>
+        <p> Log in to your account</p>
+        <label for="login-username">Email</label>
+        <input type="text" id="login-username" placeholder="" required>
+        <label for="login-password">Password</label>
+        <input type="password" id="login-password" placeholder="" required>
+        <button type="submit">Login</button>
+        <div class="google-auth">
+            <button type="button" id="googleLogin">Login with Google</button>
+        </div>
+      <p>Don't have an account? <a href="#" id="showSignup">Sign Up</a></p>
+    </form>
+
+    <button id="logout-button" style="display: none;">Log Out</button>
+  </div>
+
+  <script>
+    document.getElementById('auth-container').style.display = 'none'; // Hide until authentication logic runs
+  </script>
+  <script src="js/security.js" defer></script> <!-- Contains login/logout logic -->
+</body>
+</html>

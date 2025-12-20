@@ -1,11 +1,7 @@
 {
   "hosting": {
-    "public": "public",
+    "public": "dist",
     "rewrites": [
-      {
-        "source": "/",
-        "destination": "/dashboard.html"
-      },
       {
         "source": "**",
         "destination": "/index.html"
