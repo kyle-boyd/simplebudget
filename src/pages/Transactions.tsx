@@ -15,7 +15,7 @@ import { DataTable } from '@/components/ui/data-table';
 import { useAuth } from '@/hooks/useAuth';
 import { useTransactions, Transaction } from '@/hooks/useTransactions';
 import { useCategories } from '@/hooks/useCategories';
-import { formatCurrency, createTransactionId } from '@/lib/utils';
+import { formatCurrency, createTransactionId, parseDate, detectCategoryColumn, scoreCategoryMatch, detectDateColumn, detectAmountColumn, detectDescriptionColumn } from '@/lib/utils';
 import Papa from 'papaparse';
 
 const SELECTED_MONTH_KEY = 'selectedMonth';
@@ -40,6 +40,7 @@ export function Transactions() {
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvMappings, setCsvMappings] = useState<Record<string, string>>({});
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
+  const [csvPreviewData, setCsvPreviewData] = useState<any[]>([]);
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
@@ -83,13 +84,90 @@ export function Transactions() {
       complete: (results) => {
         if (results.data && results.data.length > 0) {
           const headers = Object.keys(results.data[0] as object);
+          const previewData = results.data.slice(0, 2); // Get first 2 rows for preview
+          
+          // Get all existing subcategory names for smart matching
+          const allSubcategoryNames = categories.flatMap(cat => 
+            cat.subcategories.map(sub => sub.name)
+          );
+          
+          // Smart column detection for all fields
+          let detectedDateColumn = '';
+          let detectedAmountColumn = '';
+          let detectedDescriptionColumn = '';
+          let detectedCategoryColumn = '';
+          
+          let bestDateScore = 0;
+          let bestAmountScore = 0;
+          let bestDescriptionScore = 0;
+          let bestCategoryScore = 0;
+          
+          // Detect by column name for Date, Amount, Description
+          for (const header of headers) {
+            const dateScore = detectDateColumn(header);
+            const amountScore = detectAmountColumn(header);
+            const descScore = detectDescriptionColumn(header);
+            
+            if (dateScore > bestDateScore) {
+              bestDateScore = dateScore;
+              detectedDateColumn = header;
+            }
+            if (amountScore > bestAmountScore) {
+              bestAmountScore = amountScore;
+              detectedAmountColumn = header;
+            }
+            if (descScore > bestDescriptionScore) {
+              bestDescriptionScore = descScore;
+              detectedDescriptionColumn = header;
+            }
+          }
+          
+          // Smart category column detection - check by name first
+          let bestNameScore = 0;
+          for (const header of headers) {
+            const nameScore = detectCategoryColumn(header);
+            if (nameScore > bestNameScore) {
+              bestNameScore = nameScore;
+              detectedCategoryColumn = header;
+            }
+          }
+          
+          // If we have existing categories, also try matching by values
+          if (allSubcategoryNames.length > 0) {
+            for (const header of headers) {
+              // Skip if we already detected this by name and it's high confidence
+              if (header === detectedCategoryColumn && bestNameScore >= 50) {
+                continue;
+              }
+              
+              // Get sample values from this column
+              const columnValues = results.data
+                .slice(0, Math.min(20, results.data.length)) // Sample first 20 rows
+                .map(row => row[header])
+                .filter(val => val !== null && val !== undefined && val !== '');
+              
+              if (columnValues.length > 0) {
+                const matchScore = scoreCategoryMatch(columnValues, allSubcategoryNames);
+                // Combine name score and value match score
+                const nameScore = detectCategoryColumn(header);
+                const combinedScore = nameScore * 0.4 + matchScore * 0.6;
+                
+                if (combinedScore > bestCategoryScore) {
+                  bestCategoryScore = combinedScore;
+                  detectedCategoryColumn = header;
+                }
+              }
+            }
+          }
+          
           setCsvFile(file);
           setCsvHeaders(headers);
+          setCsvPreviewData(previewData);
           setCsvMappings({
-            Date: headers[0] || '',
-            Amount: headers[1] || '',
-            Description: headers[2] || '',
-            Category: headers[3] || '',
+            Date: detectedDateColumn || headers[0] || '',
+            Amount: detectedAmountColumn || headers[1] || '',
+            Description: detectedDescriptionColumn || headers[2] || '',
+            Category: detectedCategoryColumn || headers[3] || '',
           });
           setShowMappingModal(true);
         }
@@ -104,19 +182,29 @@ export function Transactions() {
       header: true,
       complete: (results) => {
         const newTransactions: Transaction[] = (results.data as any[])
-          .filter(t => t[csvMappings.Date] && t[csvMappings.Amount])
+          .filter(t => {
+            const dateField = csvMappings.Date;
+            const amountField = csvMappings.Amount;
+            return dateField && amountField && dateField !== 'none' && amountField !== 'none' && t[dateField] && t[amountField];
+          })
           .map(t => {
-            const amount = parseFloat(String(t[csvMappings.Amount]).replace(/[^0-9.-]/g, ''));
+            const dateField = csvMappings.Date;
+            const descriptionField = csvMappings.Description;
+            const amountField = csvMappings.Amount;
+            const categoryField = csvMappings.Category;
+            
+            const amount = parseFloat(String(t[amountField]).replace(/[^0-9.-]/g, ''));
+            const parsedDate = parseDate(t[dateField]);
             return {
               id: createTransactionId({
-                Date: t[csvMappings.Date],
-                Description: t[csvMappings.Description] || '',
+                Date: parsedDate,
+                Description: descriptionField && descriptionField !== 'none' ? t[descriptionField] || '' : '',
                 Amount: amount
               }),
-              Date: t[csvMappings.Date],
+              Date: parsedDate,
               Amount: amount,
-              Description: t[csvMappings.Description] || '',
-              Category: t[csvMappings.Category] || '',
+              Description: descriptionField && descriptionField !== 'none' ? t[descriptionField] || '' : '',
+              Category: categoryField && categoryField !== 'none' ? t[categoryField] || '' : '',
               confirmed: false,
             };
           });
@@ -218,7 +306,8 @@ export function Transactions() {
         const date = new Date(2000 + parseInt(dateParts[2]), parseInt(dateParts[0]) - 1, parseInt(dateParts[1]));
         const formattedDate = date.toLocaleDateString('en-US', {
           month: 'short',
-          day: 'numeric'
+          day: 'numeric',
+          year: 'numeric'
         });
         return <div className="font-medium">{formattedDate}</div>
       },
@@ -404,7 +493,7 @@ export function Transactions() {
           </div>
         </div>
 
-      <div className="lg:flex lg:items-start lg:gap-6">
+      <div className="lg:flex lg:items-start lg:gap-3">
         <div
           className={`flex-1 min-w-0 transition-[padding,max-width] duration-300 ${
             isEditPanelOpen && selectedTransaction ? 'lg:pr-6' : ''
@@ -447,7 +536,11 @@ export function Transactions() {
                 <div className="text-sm text-muted-foreground">
                   {new Date(2000 + parseInt(selectedTransaction.Date.split('/')[2]), 
                     parseInt(selectedTransaction.Date.split('/')[0]) - 1, 
-                    parseInt(selectedTransaction.Date.split('/')[1])).toLocaleDateString()}
+                    parseInt(selectedTransaction.Date.split('/')[1])).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric'
+                    })}
                 </div>
                 <div className="text-2xl font-bold">
                   {formatCurrency(parseFloat(String(selectedTransaction.Amount)))}
@@ -530,7 +623,11 @@ export function Transactions() {
                     <div className="text-sm text-muted-foreground">
                       {new Date(2000 + parseInt(selectedTransaction.Date.split('/')[2]), 
                         parseInt(selectedTransaction.Date.split('/')[0]) - 1, 
-                        parseInt(selectedTransaction.Date.split('/')[1])).toLocaleDateString()}
+                        parseInt(selectedTransaction.Date.split('/')[1])).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric'
+                        })}
                     </div>
                     <div className="text-2xl font-bold">
                       {formatCurrency(parseFloat(String(selectedTransaction.Amount)))}
@@ -591,35 +688,135 @@ export function Transactions() {
         </Sheet>
 
         <Dialog open={showMappingModal} onOpenChange={setShowMappingModal}>
-          <DialogContent>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Match CSV Columns</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
-              {['Date', 'Amount', 'Description', 'Category'].map(field => (
-                <div key={field} className="space-y-2">
-                  <label className="text-sm font-medium">{field}</label>
-                  <Select
-                    value={csvMappings[field] || ''}
-                    onValueChange={(value) => setCsvMappings({ ...csvMappings, [field]: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder={`Select ${field} column`} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {csvHeaders.map(header => (
-                        <SelectItem key={header} value={header}>{header}</SelectItem>
+              {/* Horizontal table-like mapping with dropdowns */}
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="border-b">
+                      {['Date', 'Amount', 'Description', 'Category'].map(field => (
+                        <th key={field} className="text-left p-3 font-medium">
+                          {field}
+                        </th>
                       ))}
-                    </SelectContent>
-                  </Select>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      {['Date', 'Amount', 'Description', 'Category'].map(field => (
+                        <td key={field} className="p-3">
+                          <Select
+                            value={csvMappings[field] || 'none'}
+                            onValueChange={(value) => setCsvMappings({ ...csvMappings, [field]: value })}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder={`Select ${field} column`} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {csvHeaders.map(header => (
+                                <SelectItem key={header} value={header}>
+                                  {header}
+                                </SelectItem>
+                              ))}
+                              <SelectItem value="none">No field</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </td>
+                      ))}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Example transactions preview */}
+              {csvPreviewData.length > 0 && (
+                <div className="mt-6 space-y-2">
+                  <h3 className="text-sm font-medium">Example Transactions Preview</h3>
+                  <div className="overflow-x-auto border rounded-md">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b bg-muted/50">
+                          <th className="text-left p-2 font-medium">Date</th>
+                          <th className="text-left p-2 font-medium">Description</th>
+                          <th className="text-right p-2 font-medium">Amount</th>
+                          <th className="text-left p-2 font-medium">Category</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {csvPreviewData.map((row, idx) => {
+                          // Get mapped values
+                          const dateField = csvMappings.Date && csvMappings.Date !== 'none' ? csvMappings.Date : null;
+                          const descriptionField = csvMappings.Description && csvMappings.Description !== 'none' ? csvMappings.Description : null;
+                          const amountField = csvMappings.Amount && csvMappings.Amount !== 'none' ? csvMappings.Amount : null;
+                          const categoryField = csvMappings.Category && csvMappings.Category !== 'none' ? csvMappings.Category : null;
+
+                          // Format date using smart parser
+                          let formattedDate = '';
+                          if (dateField && row[dateField]) {
+                            try {
+                              const parsedDateStr = parseDate(row[dateField]);
+                              // Convert parsed date (MM/DD/YY) to Date object for formatting
+                              const dateParts = parsedDateStr.split('/');
+                              if (dateParts.length === 3) {
+                                const year = parseInt(dateParts[2]);
+                                // Handle 2-digit year: assume 20xx for 00-99
+                                const fullYear = year < 100 ? 2000 + year : year;
+                                const date = new Date(fullYear, parseInt(dateParts[0]) - 1, parseInt(dateParts[1]));
+                                if (!isNaN(date.getTime())) {
+                                  formattedDate = date.toLocaleDateString('en-US', {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    year: 'numeric'
+                                  });
+                                } else {
+                                  formattedDate = parsedDateStr;
+                                }
+                              } else {
+                                formattedDate = parsedDateStr;
+                              }
+                            } catch (e) {
+                              formattedDate = String(row[dateField]);
+                            }
+                          }
+
+                          // Format amount
+                          let formattedAmount = '';
+                          if (amountField && row[amountField]) {
+                            try {
+                              const amount = parseFloat(String(row[amountField]).replace(/[^0-9.-]/g, ''));
+                              formattedAmount = formatCurrency(amount);
+                            } catch (e) {
+                              formattedAmount = String(row[amountField]);
+                            }
+                          }
+
+                          const description = descriptionField && row[descriptionField] ? String(row[descriptionField]) : '';
+                          const category = categoryField && row[categoryField] ? String(row[categoryField]) : '';
+
+                          return (
+                            <tr key={idx} className="border-b">
+                              <td className="p-2 font-medium">{formattedDate || '-'}</td>
+                              <td className="p-2 min-w-[200px]">{description || '-'}</td>
+                              <td className="p-2 text-right font-medium">{formattedAmount || '-'}</td>
+                              <td className="p-2">{category || '-'}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              ))}
+              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowMappingModal(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleSaveMapping}>Save Mapping</Button>
+              <Button onClick={handleSaveMapping}>Import Transactions</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

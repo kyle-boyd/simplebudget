@@ -87,7 +87,7 @@ export function Budget() {
 
   // Calculate spending for a category (sum of all subcategories)
   const getCategorySpending = (category: Category): number => {
-    return category.subcategories.reduce((sum, sub) => {
+    return (category.subcategories || []).reduce((sum, sub) => {
       return sum + getSubcategorySpending(sub.name);
     }, 0);
   };
@@ -169,7 +169,7 @@ export function Budget() {
 
     // Find the subcategory
     const category = categories.find(c => c.id === parentId);
-    const subcategory = category?.subcategories.find(s => s.id === subcategoryId);
+    const subcategory = (category?.subcategories || []).find(s => s.id === subcategoryId);
 
     if (!subcategory) return;
 
@@ -192,7 +192,7 @@ export function Budget() {
 
     // Check for duplicate names
     const duplicateSubcategory = categories.some(c =>
-      c.subcategories.some(s => 
+      (c.subcategories || []).some(s => 
         s.id !== subcategoryId && 
         s.name.trim().toLowerCase() === trimmedName.toLowerCase()
       )
@@ -224,7 +224,7 @@ export function Budget() {
       e.currentTarget.blur();
     } else if (e.key === 'Escape') {
       const category = categories.find(c => c.id === parentId);
-      const subcategory = category?.subcategories.find(s => s.id === subcategoryId);
+      const subcategory = (category?.subcategories || []).find(s => s.id === subcategoryId);
       
       // If it's a new subcategory with no name, remove it
       if (subcategory && !subcategory.name) {
@@ -256,7 +256,7 @@ export function Budget() {
 
     // Check for duplicate subcategory names across ALL categories
     const duplicateSubcategory = categories.some(c =>
-      c.subcategories.some(s => {
+      (c.subcategories || []).some(s => {
         if (editingCategory?.subcategory && editingCategory.parentId) {
           return s.id !== editingCategory.subcategory.id && 
                  s.name.trim().toLowerCase() === trimmedName.toLowerCase();
@@ -394,7 +394,7 @@ export function Budget() {
 
         <div className="space-y-4">
           {regularCategories.map(category => {
-            const totalAmount = category.subcategories.reduce((sum, sub) => sum + (sub.amount || 0), 0);
+            const totalAmount = (category.subcategories || []).reduce((sum, sub) => sum + (sub.amount || 0), 0);
             const categorySpending = getCategorySpending(category);
             const isOverBudget = categorySpending > totalAmount;
             return (
@@ -447,14 +447,14 @@ export function Budget() {
 
                 {/* Subcategories */}
                 <div>
-                      {category.subcategories.map((sub, index) => {
+                      {(category.subcategories || []).map((sub, index) => {
                         const spending = getSubcategorySpending(sub.name);
                         const budget = sub.amount || 0;
                         const isSubOverBudget = spending > budget;
                         // Automatically edit if no name or explicitly in edit mode
                         const isEditingName = editingNames[sub.id] !== undefined || !sub.name;
                         const displayName = isEditingName ? (editingNames[sub.id] ?? '') : sub.name;
-                        const isLast = index === category.subcategories.length - 1;
+                        const isLast = index === (category.subcategories || []).length - 1;
                         
                         return (
                           <div key={sub.id} className={`flex items-center justify-between gap-2 py-1 group ${!isLast ? 'border-b' : ''} px-6 lg:px-8`}>
@@ -600,7 +600,7 @@ export function Budget() {
                   <div className="border-b">
                     <span className="font-semibold">{systemCategory.name}</span>
                   </div>
-                  {systemCategory.subcategories.map((sub) => (
+                  {(systemCategory.subcategories || []).map((sub) => (
                     <div key={sub.id} className="flex items-center justify-between py-1 border-b">
                       <span>{sub.name}</span>
                     </div>

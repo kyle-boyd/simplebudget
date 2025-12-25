@@ -40,7 +40,12 @@ export function useCategories(userId: string | null) {
       if (snapshot.exists()) {
         const data = snapshot.val();
         const categoriesArray = Array.isArray(data) ? data : Object.values(data);
-        setCategories(categoriesArray as Category[]);
+        // Normalize categories to ensure they all have subcategories array
+        const normalizedCategories = (categoriesArray as Category[]).map(cat => ({
+          ...cat,
+          subcategories: cat.subcategories || []
+        }));
+        setCategories(normalizedCategories);
       } else {
         // Initialize with default categories if none exist
         await set(categoriesRef, defaultCategories);
@@ -78,7 +83,7 @@ export function useCategories(userId: string | null) {
   const addSubcategory = async (categoryId: number, subcategory: Subcategory) => {
     const updated = categories.map(c => 
       c.id === categoryId 
-        ? { ...c, subcategories: [...c.subcategories, subcategory] }
+        ? { ...c, subcategories: [...(c.subcategories || []), subcategory] }
         : c
     );
     await saveCategories(updated);
@@ -89,7 +94,7 @@ export function useCategories(userId: string | null) {
       c.id === categoryId
         ? {
             ...c,
-            subcategories: c.subcategories.map(s =>
+            subcategories: (c.subcategories || []).map(s =>
               s.id === subcategoryId ? { ...s, ...updates } : s
             )
           }
@@ -101,7 +106,7 @@ export function useCategories(userId: string | null) {
   const deleteSubcategory = async (categoryId: number, subcategoryId: number) => {
     const updated = categories.map(c => 
       c.id === categoryId
-        ? { ...c, subcategories: c.subcategories.filter(s => s.id !== subcategoryId) }
+        ? { ...c, subcategories: (c.subcategories || []).filter(s => s.id !== subcategoryId) }
         : c
     );
     await saveCategories(updated);
