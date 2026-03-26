@@ -3,14 +3,14 @@ import { getDatabase, connectDatabaseEmulator } from 'firebase/database';
 import { getAuth, connectAuthEmulator } from 'firebase/auth';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDT5QAzYQat7X_GFLbqh2d18dfYGzkwb98",
-  authDomain: "simple-budgeting-5f9cb.firebaseapp.com",
-  projectId: "simple-budgeting-5f9cb",
-  storageBucket: "simple-budgeting-5f9cb.firebasestorage.app",
-  messagingSenderId: "4204953002",
-  appId: "1:4204953002:web:b57ab7d41c7abd23587fd3",
-  measurementId: "G-K969YZNXGC",
-  databaseURL: "https://simple-budgeting-5f9cb-default-rtdb.firebaseio.com/"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL,
 };
 
 // Initialize Firebase
