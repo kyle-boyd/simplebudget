@@ -1,5 +1,5 @@
 const firebaseConfig = {
-    apiKey: "AIzaSyDT5QAzYQat7X_GFLbqh2d18dfYGzkwb98",
+    apiKey: "AIzaSyAxTL9EhHAz8S6YpEpQKg7EuBIWnQieIZ4",
     authDomain: "simple-budgeting-5f9cb.firebaseapp.com",
     projectId: "simple-budgeting-5f9cb",
     storageBucket: "simple-budgeting-5f9cb.firebasestorage.app",

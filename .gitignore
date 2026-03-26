@@ -73,3 +73,6 @@ node_modules/
 
 # dataconnect generated files
 .dataconnect
+
+# Build output (contains sensitive config)
+dist/

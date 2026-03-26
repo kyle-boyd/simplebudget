@@ -418,7 +418,7 @@ export function Budget() {
                           </Button>
                         )}
                       </div>
-                      <div className="flex items-center gap-16">
+                      <div className="flex items-center gap-4 lg:gap-16">
                         <div className="text-right">
                           <div className="text-sm text-muted-foreground">Budget</div>
                           <div className="font-semibold">{formatCurrency(totalAmount)}</div>
@@ -502,7 +502,7 @@ export function Budget() {
                                 </>
                               )}
                             </div>
-                            <div className="flex items-center gap-16">
+                            <div className="flex items-center gap-3 lg:gap-16">
                               <div className="text-right">
                                 <Input
                                   type="text"
@@ -540,10 +540,10 @@ export function Budget() {
                                       setEditingAmounts({ ...editingAmounts, [sub.id]: `$${amount.toFixed(2)}` });
                                     }
                                   }}
-                                  className="h-8 w-[120px] text-right"
+                                  className="h-8 w-[80px] lg:w-[120px] text-right"
                                 />
                               </div>
-                              <div className="text-right min-w-[100px]">
+                              <div className="text-right min-w-[60px] lg:min-w-[100px]">
                                 <div className={`font-medium ${isSubOverBudget ? 'text-destructive' : 'text-green-600'}`}>
                                   {formatCurrency(spending)}
                                 </div>
@@ -578,7 +578,7 @@ export function Budget() {
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => setDeletingSubcategoryId(sub.id)}
-                                    className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-primary hover:text-primary"
+                                    className="h-6 w-6 p-0 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity text-primary hover:text-primary"
                                     title="Delete subcategory"
                                   >
                                     <Trash2 className="h-3.5 w-3.5" />

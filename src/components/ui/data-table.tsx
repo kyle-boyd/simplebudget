@@ -11,7 +11,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table"
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react"
+import { Check, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Undo2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -65,6 +65,10 @@ interface DataTableProps<TData, TValue> {
   compact?: boolean
   /** Override column order (e.g. ['Description', 'Date', 'Amount'] for mobile) */
   columnOrder?: string[]
+  /** Called when a row is swiped right past the threshold */
+  onSwipeRight?: (row: TData) => void
+  /** Returns 'confirm' or 'unconfirm' to determine swipe indicator color/icon */
+  getSwipeAction?: (row: TData) => 'confirm' | 'unconfirm'
 }
 
 export function DataTable<TData, TValue>({
@@ -82,6 +86,8 @@ export function DataTable<TData, TValue>({
   forceHiddenColumnIds,
   compact = false,
   columnOrder: columnOrderProp,
+  onSwipeRight,
+  getSwipeAction,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([])
   const [columnOrderState, setColumnOrderState] = React.useState<string[] | undefined>(() => columnOrderProp)
@@ -102,6 +108,15 @@ export function DataTable<TData, TValue>({
   }), [columnVisibility, forceHiddenColumnIds])
   const [rowSelection, setRowSelection] = React.useState({})
   const [globalFilter, setGlobalFilter] = React.useState("")
+
+  // Swipe-to-confirm state
+  const SWIPE_THRESHOLD = 80
+  const [swipeRowId, setSwipeRowId] = React.useState<string | null>(null)
+  const [swipeDx, setSwipeDx] = React.useState(0)
+  const swipeTouchStartX = React.useRef(0)
+  const swipeTouchStartY = React.useRef(0)
+  const swipeIsHorizontal = React.useRef<boolean | null>(null)
+  const swipeTriggeredRef = React.useRef(false)
 
   // Sync column order from prop (e.g. mobile order); clear when prop is undefined
   React.useEffect(() => {
@@ -248,29 +263,109 @@ export function DataTable<TData, TValue>({
           )}
           <TableBody>
             {table.getRowModel().rows?.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow
-                  key={row.id}
-                  data-state={row.getIsSelected() && "selected"}
-                  className={`${onRowClick ? "cursor-pointer" : ""} ${getRowClassName?.(row.original) || ""}`}
-                  onClick={() => onRowClick?.(row.original)}
-                >
-                  {row.getVisibleCells().map((cell, cellIndex) => (
-                    <TableCell 
-                      key={cell.id}
-                      className={cn(
-                        cellIndex === 0 ? "pl-6" : "",
-                        compact && "px-2 py-1.5"
-                      )}
-                    >
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext()
-                      )}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
+              table.getRowModel().rows.map((row) => {
+                const isSwipingThis = swipeRowId === row.id
+                const dx = isSwipingThis ? swipeDx : 0
+                const swipeAction = getSwipeAction?.(row.original) ?? 'confirm'
+                const indicatorBg = swipeAction === 'confirm' ? '#22c55e' : '#f59e0b'
+                const IndicatorIcon = swipeAction === 'confirm' ? Check : Undo2
+                const cells = row.getVisibleCells()
+
+                return (
+                  <TableRow
+                    key={row.id}
+                    data-state={row.getIsSelected() && "selected"}
+                    className={`${onRowClick ? "cursor-pointer" : ""} ${getRowClassName?.(row.original) || ""}`}
+                    onClick={() => {
+                      if (swipeTriggeredRef.current) return
+                      onRowClick?.(row.original)
+                    }}
+                    onTouchStart={onSwipeRight ? (e) => {
+                      swipeTouchStartX.current = e.touches[0].clientX
+                      swipeTouchStartY.current = e.touches[0].clientY
+                      swipeIsHorizontal.current = null
+                      swipeTriggeredRef.current = false
+                      setSwipeRowId(row.id)
+                      setSwipeDx(0)
+                    } : undefined}
+                    onTouchMove={onSwipeRight ? (e) => {
+                      const deltaX = e.touches[0].clientX - swipeTouchStartX.current
+                      const deltaY = e.touches[0].clientY - swipeTouchStartY.current
+                      // Determine direction on first significant move
+                      if (swipeIsHorizontal.current === null && (Math.abs(deltaX) > 4 || Math.abs(deltaY) > 4)) {
+                        swipeIsHorizontal.current = Math.abs(deltaX) > Math.abs(deltaY)
+                      }
+                      if (!swipeIsHorizontal.current) return
+                      if (deltaX > 0) {
+                        e.preventDefault()
+                        setSwipeDx(Math.min(deltaX, SWIPE_THRESHOLD + 20))
+                      }
+                    } : undefined}
+                    onTouchEnd={onSwipeRight ? () => {
+                      if (swipeDx >= SWIPE_THRESHOLD) {
+                        swipeTriggeredRef.current = true
+                        onSwipeRight(row.original)
+                      }
+                      setSwipeRowId(null)
+                      setSwipeDx(0)
+                      swipeIsHorizontal.current = null
+                    } : undefined}
+                  >
+                    {cells.map((cell, cellIndex) => {
+                      const isFirstCell = cellIndex === 0
+                      const contentStyle: React.CSSProperties = onSwipeRight ? {
+                        transform: `translateX(${dx}px)`,
+                        transition: isSwipingThis ? 'none' : 'transform 0.2s ease-out',
+                      } : {}
+
+                      return (
+                        <TableCell
+                          key={cell.id}
+                          className={cn(
+                            !isFirstCell && !compact ? "pl-3" : "",
+                            compact && "px-2 py-1.5",
+                          )}
+                          style={isFirstCell ? { padding: 0 } : undefined}
+                        >
+                          {isFirstCell && onSwipeRight ? (
+                            <div style={{ position: 'relative', overflow: 'hidden' }}>
+                              {/* Swipe action indicator */}
+                              <div style={{
+                                position: 'absolute',
+                                left: -SWIPE_THRESHOLD,
+                                top: 0,
+                                bottom: 0,
+                                width: SWIPE_THRESHOLD,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                backgroundColor: indicatorBg,
+                                transform: `translateX(${dx}px)`,
+                                transition: isSwipingThis ? 'none' : 'transform 0.2s ease-out',
+                              }}>
+                                <IndicatorIcon size={20} style={{ color: 'white' }} />
+                              </div>
+                              {/* Cell content */}
+                              <div style={{
+                                ...contentStyle,
+                                paddingLeft: compact ? '8px' : '24px',
+                                paddingTop: compact ? '6px' : '12px',
+                                paddingBottom: compact ? '6px' : '12px',
+                              }}>
+                                {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                              </div>
+                            </div>
+                          ) : (
+                            <div style={contentStyle}>
+                              {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                            </div>
+                          )}
+                        </TableCell>
+                      )
+                    })}
+                  </TableRow>
+                )
+              })
             ) : (
               <TableRow>
                 <TableCell

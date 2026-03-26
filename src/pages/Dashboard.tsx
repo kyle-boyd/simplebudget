@@ -430,7 +430,7 @@ export function Dashboard() {
 
   return (
     <Layout>
-      <div className="flex flex-col h-[calc(100vh-4rem-1.5rem-5rem)] lg:h-[calc(100vh-1.5rem-4rem-1.5rem)]">
+      <div className="flex flex-col lg:h-[calc(100vh-1.5rem-4rem-1.5rem)]">
         <div className="sticky top-0 lg:top-0 z-10 h-auto lg:h-16 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 lg:gap-0 bg-background border-b -mx-4 lg:-mx-6 px-4 lg:px-6 py-4 lg:py-0 flex-shrink-0">
           <h1 className="font-medium">Dashboard</h1>
           <Select value={selectedMonth} onValueChange={setSelectedMonth}>
@@ -445,16 +445,16 @@ export function Dashboard() {
           </Select>
         </div>
 
-        <div className="flex flex-col gap-6 flex-1 min-h-0 mt-6">
-          <div className="flex-1 min-h-0">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch h-full">
-            <Card className="flex flex-col md:col-span-2 h-full shadow-none overflow-hidden">
+        <div className="flex flex-col gap-6 lg:flex-1 lg:min-h-0 mt-6">
+          <div className="lg:flex-1 lg:min-h-0">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:items-stretch lg:h-full">
+            <Card className="flex flex-col md:col-span-2 shadow-none overflow-hidden">
               <CardHeader className="flex-shrink-0">
                 <CardTitle>Budget vs Actual</CardTitle>
                 <CardDescription>Showing monthly data for the current year</CardDescription>
               </CardHeader>
-              <CardContent className="flex-1 min-h-0 overflow-hidden">
-                <ChartContainer config={chartConfig} className="h-full w-full">
+              <CardContent className="flex-1 lg:min-h-0 overflow-hidden">
+                <ChartContainer config={chartConfig} className="h-[250px] lg:h-full w-full">
                   <BarChart
                     data={yearlyData}
                     barSize={40}
@@ -552,13 +552,13 @@ export function Dashboard() {
               </CardFooter>
             </Card>
 
-            <Card className="flex flex-col md:col-span-1 h-full shadow-none overflow-hidden">
+            <Card className="flex flex-col md:col-span-1 shadow-none overflow-hidden">
               <CardHeader className="flex-shrink-0">
                 <CardTitle>Categorization Progress</CardTitle>
                 <CardDescription>{getDateRange(filteredTransactions)}</CardDescription>
               </CardHeader>
-              <CardContent className="flex-1 min-h-0 overflow-hidden">
-                <div className="relative h-full w-full">
+              <CardContent className="flex-1 lg:min-h-0 overflow-hidden">
+                <div className="relative h-[250px] lg:h-full w-full">
                   <ChartContainer config={chartConfig} className="h-full w-full">
                     <PieChart>
                       <Pie
@@ -622,13 +622,13 @@ export function Dashboard() {
             </div>
           </div>
 
-          <Card className="flex flex-col flex-1 min-h-0 shadow-none overflow-hidden">
+          <Card className="flex flex-col lg:flex-1 lg:min-h-0 shadow-none overflow-hidden">
             <CardHeader className="flex-shrink-0">
               <CardTitle>Monthly Spending by Main Category</CardTitle>
               <CardDescription>{getDateRange(filteredTransactions)}</CardDescription>
             </CardHeader>
-            <CardContent className="flex-1 min-h-0 overflow-hidden">
-              <ChartContainer config={chartConfig} className="h-full w-full">
+            <CardContent className="flex-1 lg:min-h-0 overflow-hidden">
+              <ChartContainer config={chartConfig} className="h-[300px] lg:h-full w-full">
                 <BarChart
                   data={mainSpendingData}
                   layout="vertical"

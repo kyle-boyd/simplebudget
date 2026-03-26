@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ColumnDef } from '@tanstack/react-table';
-import { ArrowUpDown, Check } from 'lucide-react';
+import { ArrowUpDown, Check, ListFilter, Trash2, AlertTriangle } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,13 +9,14 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel, SelectSeparator } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/ui/responsive-dialog';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { DataTable } from '@/components/ui/data-table';
 import { useAuth } from '@/hooks/useAuth';
 import { useTransactions, Transaction } from '@/hooks/useTransactions';
 import { useCategories } from '@/hooks/useCategories';
+import { useRules, Rule } from '@/hooks/useRules';
 import { formatCurrency, createTransactionId, parseDate, detectCategoryColumn, scoreCategoryMatch, detectDateColumn, detectAmountColumn, detectDescriptionColumn } from '@/lib/utils';
 import Papa from 'papaparse';
 
@@ -24,19 +25,25 @@ const SELECTED_MONTH_KEY = 'selectedMonth';
 export function Transactions() {
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
-  const { transactions, addTransactions, updateTransaction, toggleConfirm } = useTransactions(user?.uid || null);
+  const { transactions, addTransactions, updateTransaction, saveTransactions, toggleConfirm } = useTransactions(user?.uid || null);
   const { categories } = useCategories(user?.uid || null);
+  const { rules, addRule, updateRule, deleteRule, findConflict } = useRules(user?.uid || null);
   const [selectedMonth, setSelectedMonth] = useState(() => {
     // Initialize from localStorage if available
     return localStorage.getItem(SELECTED_MONTH_KEY) || 'All Months';
   });
-  
+
   // Get category filter from URL params
   const categoryFilterFromUrl = searchParams.get('category') || undefined;
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [isEditPanelOpen, setIsEditPanelOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [createRule, setCreateRule] = useState(false);
+  const [showRulesPanel, setShowRulesPanel] = useState(false);
+  const [showRuleDialog, setShowRuleDialog] = useState(false);
+  const [pendingRule, setPendingRule] = useState<{ matchText: string; category: string } | null>(null);
+  const [conflictingRule, setConflictingRule] = useState<Rule | null>(null);
+  const [ruleScope, setRuleScope] = useState<'future' | 'all'>('future');
   const [showMappingModal, setShowMappingModal] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvMappings, setCsvMappings] = useState<Record<string, string>>({});
@@ -65,16 +72,25 @@ export function Transactions() {
     })
   )];
 
-  const filteredTransactions = selectedMonth === 'All Months'
-    ? transactions
-    : transactions.filter(t => {
-        const [monthName, year] = selectedMonth.split(', ');
-        const monthIndex = ['January', 'February', 'March', 'April', 'May', 'June',
-          'July', 'August', 'September', 'October', 'November', 'December']
-          .indexOf(monthName) + 1;
-        const [tMonth, , tYear] = t.Date.split('/');
-        return parseInt(tMonth) === monthIndex && tYear === year.slice(-2);
-      });
+  const [confirmFilter, setConfirmFilter] = useState<'all' | 'unconfirmed' | 'confirmed'>('all');
+
+  const filteredTransactions = useMemo(() => {
+    let result = selectedMonth === 'All Months'
+      ? transactions
+      : transactions.filter(t => {
+          const [monthName, year] = selectedMonth.split(', ');
+          const monthIndex = ['January', 'February', 'March', 'April', 'May', 'June',
+            'July', 'August', 'September', 'October', 'November', 'December']
+            .indexOf(monthName) + 1;
+          const [tMonth, , tYear] = t.Date.split('/');
+          return parseInt(tMonth) === monthIndex && tYear === year.slice(-2);
+        });
+
+    if (confirmFilter === 'confirmed') result = result.filter(t => t.confirmed);
+    if (confirmFilter === 'unconfirmed') result = result.filter(t => !t.confirmed);
+
+    return result;
+  }, [transactions, selectedMonth, confirmFilter]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -226,7 +242,48 @@ export function Transactions() {
     });
 
     setIsEditPanelOpen(false);
+
+    if (createRule && selectedCategory) {
+      const matchText = selectedTransaction.Description;
+      const conflict = findConflict(matchText);
+      setPendingRule({ matchText, category: selectedCategory });
+      setConflictingRule(conflict);
+      setRuleScope('future');
+      setShowRuleDialog(true);
+    } else {
+      setSelectedTransaction(null);
+      setCreateRule(false);
+    }
+  };
+
+  const handleConfirmRule = async () => {
+    if (!pendingRule) return;
+
+    if (conflictingRule) {
+      await updateRule(conflictingRule.id, { category: pendingRule.category });
+    } else {
+      await addRule({
+        matchText: pendingRule.matchText,
+        category: pendingRule.category,
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    if (ruleScope === 'all') {
+      const matchLower = pendingRule.matchText.toLowerCase();
+      const updated = transactions.map(t =>
+        t.Description.toLowerCase() === matchLower
+          ? { ...t, Category: pendingRule.category, hasRule: true }
+          : t
+      );
+      await saveTransactions(updated);
+    }
+
+    setShowRuleDialog(false);
+    setPendingRule(null);
+    setConflictingRule(null);
     setSelectedTransaction(null);
+    setCreateRule(false);
   };
 
   const allSubcategories = categories.flatMap(cat =>
@@ -499,6 +556,16 @@ export function Transactions() {
                 ))}
               </SelectContent>
             </Select>
+            <Select value={confirmFilter} onValueChange={(v) => setConfirmFilter(v as 'all' | 'unconfirmed' | 'confirmed')}>
+              <SelectTrigger className="w-full sm:w-[160px]">
+                <SelectValue placeholder="Filter by status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Transactions</SelectItem>
+                <SelectItem value="unconfirmed">Unconfirmed</SelectItem>
+                <SelectItem value="confirmed">Confirmed</SelectItem>
+              </SelectContent>
+            </Select>
             <Input
               type="file"
               accept=".csv"
@@ -506,6 +573,19 @@ export function Transactions() {
               className="hidden"
               id="csv-upload"
             />
+            <Button
+              variant="outline"
+              onClick={() => setShowRulesPanel(true)}
+              className="w-full sm:w-auto flex items-center gap-2"
+            >
+              <ListFilter className="h-4 w-4" />
+              Rules
+              {rules.length > 0 && (
+                <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+                  {rules.length}
+                </Badge>
+              )}
+            </Button>
             <Button asChild className="w-full sm:w-auto">
               <label htmlFor="csv-upload" className="cursor-pointer">
                 Upload Transactions
@@ -531,6 +611,8 @@ export function Transactions() {
             forceHiddenColumnIds={isMobile ? ['select', 'Category', 'confirmed', 'Date'] : undefined}
             compact={isMobile}
             columnOrder={isMobile ? ['Description', 'Amount', 'select', 'Category', 'confirmed', 'Date'] : undefined}
+            onSwipeRight={isMobile ? (transaction) => toggleConfirm(transaction.id) : undefined}
+            getSwipeAction={isMobile ? (transaction) => transaction.confirmed ? 'unconfirm' : 'confirm' : undefined}
             onRowClick={(transaction) => {
               setSelectedTransaction(transaction);
               setSelectedCategory(transaction.Category || '');
@@ -713,6 +795,137 @@ export function Transactions() {
             )}
           </SheetContent>
         </Sheet>
+
+        {/* Rules Side Panel */}
+        <Sheet open={showRulesPanel} onOpenChange={setShowRulesPanel}>
+          <SheetContent side="right" className="w-80 sm:w-96 flex flex-col">
+            <SheetHeader>
+              <SheetTitle>Category Rules</SheetTitle>
+            </SheetHeader>
+            <p className="text-sm text-muted-foreground mt-1">
+              Rules automatically categorize future transactions based on their description.
+            </p>
+            <div className="mt-4 flex-1 overflow-y-auto space-y-2">
+              {rules.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center gap-2">
+                  <ListFilter className="h-8 w-8 text-muted-foreground/40" />
+                  <p className="text-sm text-muted-foreground">No rules yet.</p>
+                  <p className="text-xs text-muted-foreground">
+                    Select a transaction and check "Always categorize as" to create one.
+                  </p>
+                </div>
+              ) : (
+                rules.map(rule => (
+                  <div key={rule.id} className="flex items-start justify-between p-3 border rounded-md gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate" title={rule.matchText}>
+                        {rule.matchText}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        → {rule.category}
+                      </p>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="shrink-0 h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                      onClick={() => deleteRule(rule.id)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
+          </SheetContent>
+        </Sheet>
+
+        {/* Rule Conflict / Scope Dialog */}
+        <ResponsiveDialog open={showRuleDialog} onOpenChange={(open) => {
+          if (!open) {
+            setShowRuleDialog(false);
+            setPendingRule(null);
+            setConflictingRule(null);
+            setSelectedTransaction(null);
+            setCreateRule(false);
+          }
+        }}>
+          <ResponsiveDialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>
+                {conflictingRule ? 'Rule Conflict' : 'Create Rule'}
+              </DialogTitle>
+              {conflictingRule && (
+                <DialogDescription className="flex items-start gap-2 mt-2 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3 text-amber-800 dark:text-amber-300">
+                  <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <span className="text-sm">
+                    A rule already categorizes <strong>"{pendingRule?.matchText}"</strong> as{' '}
+                    <strong>{conflictingRule.category}</strong>. This will override it with{' '}
+                    <strong>{pendingRule?.category}</strong>.
+                  </span>
+                </DialogDescription>
+              )}
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              {!conflictingRule && (
+                <p className="text-sm text-muted-foreground">
+                  Always categorize <strong className="text-foreground">"{pendingRule?.matchText}"</strong> as{' '}
+                  <strong className="text-foreground">{pendingRule?.category}</strong>.
+                </p>
+              )}
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Apply to:</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRuleScope('future')}
+                    className={`flex flex-col items-start p-3 rounded-md border text-left transition-colors ${
+                      ruleScope === 'future'
+                        ? 'border-primary bg-primary/5 text-primary'
+                        : 'border-border hover:border-muted-foreground'
+                    }`}
+                  >
+                    <span className="text-sm font-medium">Future only</span>
+                    <span className="text-xs text-muted-foreground mt-0.5">
+                      New transactions from now on
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRuleScope('all')}
+                    className={`flex flex-col items-start p-3 rounded-md border text-left transition-colors ${
+                      ruleScope === 'all'
+                        ? 'border-primary bg-primary/5 text-primary'
+                        : 'border-border hover:border-muted-foreground'
+                    }`}
+                  >
+                    <span className="text-sm font-medium">All matching</span>
+                    <span className="text-xs text-muted-foreground mt-0.5">
+                      Future + existing transactions
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowRuleDialog(false);
+                  setPendingRule(null);
+                  setConflictingRule(null);
+                  setSelectedTransaction(null);
+                  setCreateRule(false);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button onClick={handleConfirmRule}>
+                {conflictingRule ? 'Override Rule' : 'Create Rule'}
+              </Button>
+            </DialogFooter>
+          </ResponsiveDialogContent>
+        </ResponsiveDialog>
 
         <ResponsiveDialog open={showMappingModal} onOpenChange={setShowMappingModal}>
           <ResponsiveDialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
