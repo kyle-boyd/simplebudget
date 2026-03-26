@@ -15,33 +15,41 @@
     </style>
 <body>
   <div id="auth-container" class="auth-container">
-    <form id="signup-form" style="display: none;">
+    <form id="signup-form" style="display: none;" novalidate>
       <h2>Sign up</h2>
-      <p> Create an account</p>
+      <p>Create an account</p>
+      <div id="signup-error" class="auth-error" role="alert" hidden aria-live="polite"></div>
       <label for="signup-name">Name</label>
-      <input type="text" id="signup-name" placeholder="" required>
+      <input type="text" id="signup-name" placeholder="Your name" autocomplete="name">
       <label for="signup-username">Email</label>
-      <input type="text" id="signup-username" placeholder="" required>
+      <input type="email" id="signup-username" placeholder="you@example.com" required autocomplete="email" inputmode="email">
       <label for="signup-password">Password</label>
-      <input type="password" id="signup-password" placeholder="" required>
-      <button type="submit">Sign Up</button>
+      <input type="password" id="signup-password" placeholder="At least 6 characters" required autocomplete="new-password" minlength="6">
+      <button type="submit" class="auth-submit-btn" data-default-text="Sign Up" data-loading-text="Creating account…">
+        <span class="auth-btn-spinner" aria-hidden="true"></span>
+        <span class="auth-btn-label">Sign Up</span>
+      </button>
       <div class="google-auth">
-          <button type="button" id="googleSignup">Sign Up with Google</button>
+        <button type="button" id="googleSignup" class="auth-google-btn">Sign Up with Google</button>
       </div>
       <p>Already have an account? <a href="#" id="showLogin">Login</a></p>
     </form>
 
-    <form id="login-form" style="display: none;">
-        <h2>Welcome</h2>
-        <p> Log in to your account</p>
-        <label for="login-username">Email</label>
-        <input type="text" id="login-username" placeholder="" required>
-        <label for="login-password">Password</label>
-        <input type="password" id="login-password" placeholder="" required>
-        <button type="submit">Login</button>
-        <div class="google-auth">
-            <button type="button" id="googleLogin">Login with Google</button>
-        </div>
+    <form id="login-form" style="display: none;" novalidate>
+      <h2>Welcome</h2>
+      <p>Log in to your account</p>
+      <div id="login-error" class="auth-error" role="alert" hidden aria-live="polite"></div>
+      <label for="login-username">Email</label>
+      <input type="email" id="login-username" placeholder="you@example.com" required autocomplete="email" inputmode="email">
+      <label for="login-password">Password</label>
+      <input type="password" id="login-password" placeholder="Your password" required autocomplete="current-password">
+      <button type="submit" class="auth-submit-btn" data-default-text="Login" data-loading-text="Logging in…">
+        <span class="auth-btn-spinner" aria-hidden="true"></span>
+        <span class="auth-btn-label">Login</span>
+      </button>
+      <div class="google-auth">
+        <button type="button" id="googleLogin" class="auth-google-btn">Login with Google</button>
+      </div>
       <p>Don't have an account? <a href="#" id="showSignup">Sign Up</a></p>
     </form>
 

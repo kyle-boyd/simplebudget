@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings</title>
+    <link rel="stylesheet" href="./css/tokens.css">
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Figtree:ital,wght@0,300..900;1,300..900&display=swap');
+    </style>
+</head>
+<body>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+
+    <nav class="sidenav">
+        <div class="logo">
+            <img src="logo.svg" alt="Logo">
+        </div>
+        <div class="nav-items">
+            <a href="dashboard.html" class="nav-item">Dashboard</a>
+            <a href="transactions.html" class="nav-item">Transactions</a>
+            <a href="budget.html" class="nav-item">Budget</a>
+            <a href="settings.html" class="nav-item active">Settings</a>
+            <button class="nav-item logout" id="logout-button">Log Out</button>
+        </div>
+    </nav>
+
+    <div class="mainContent">
+        <div class="settings-page">
+            <div class="settings-header">
+                <h2>Settings</h2>
+            </div>
+
+            <!-- Preferences Section -->
+            <div class="settings-section">
+                <h3 class="settings-section-title">Preferences</h3>
+                <div class="settings-card">
+                    <div class="settings-form-group">
+                        <label for="currencySelect">Currency</label>
+                        <select id="currencySelect" class="settings-select">
+                            <option value="USD">USD ($)</option>
+                            <option value="EUR">EUR (&euro;)</option>
+                            <option value="GBP">GBP (&pound;)</option>
+                            <option value="CAD">CAD (C$)</option>
+                            <option value="AUD">AUD (A$)</option>
+                            <option value="JPY">JPY (&yen;)</option>
+                        </select>
+                    </div>
+                    <div class="settings-form-group">
+                        <label for="dateFormatSelect">Date Format</label>
+                        <select id="dateFormatSelect" class="settings-select">
+                            <option value="MM/DD/YY">MM/DD/YY</option>
+                            <option value="DD/MM/YY">DD/MM/YY</option>
+                            <option value="YY/MM/DD">YY/MM/DD</option>
+                        </select>
+                    </div>
+                    <div class="settings-form-actions">
+                        <button id="savePreferencesBtn" class="save-btn">Save Preferences</button>
+                        <span id="preferencesSavedMsg" class="settings-saved-msg"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Account Section -->
+            <div class="settings-section">
+                <h3 class="settings-section-title">Account</h3>
+                <div class="settings-card">
+                    <div class="settings-form-group">
+                        <label for="displayNameInput">Display Name</label>
+                        <input type="text" id="displayNameInput" class="settings-input" placeholder="Your name">
+                    </div>
+                    <div class="settings-form-group">
+                        <label for="emailDisplay">Email</label>
+                        <input type="text" id="emailDisplay" class="settings-input" disabled>
+                    </div>
+                    <div class="settings-form-actions">
+                        <button id="saveProfileBtn" class="save-btn">Save Profile</button>
+                        <span id="profileSavedMsg" class="settings-saved-msg"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Change Password Section -->
+            <div class="settings-section">
+                <h3 class="settings-section-title">Change Password</h3>
+                <div class="settings-card">
+                    <div class="settings-form-group">
+                        <label for="currentPasswordInput">Current Password</label>
+                        <input type="password" id="currentPasswordInput" class="settings-input" placeholder="Enter current password">
+                    </div>
+                    <div class="settings-form-group">
+                        <label for="newPasswordInput">New Password</label>
+                        <input type="password" id="newPasswordInput" class="settings-input" placeholder="Enter new password">
+                    </div>
+                    <div class="settings-form-group">
+                        <label for="confirmPasswordInput">Confirm New Password</label>
+                        <input type="password" id="confirmPasswordInput" class="settings-input" placeholder="Confirm new password">
+                    </div>
+                    <div class="settings-form-actions">
+                        <button id="changePasswordBtn" class="save-btn">Change Password</button>
+                        <span id="passwordMsg" class="settings-saved-msg"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Danger Zone -->
+            <div class="settings-section settings-danger-zone">
+                <h3 class="settings-section-title danger">Danger Zone</h3>
+                <div class="settings-card danger-card">
+                    <div class="danger-zone-content">
+                        <div>
+                            <p class="danger-title">Delete Account</p>
+                            <p class="danger-description">Permanently delete your account and all associated data. This action cannot be undone.</p>
+                        </div>
+                        <button id="deleteAccountBtn" class="delete-account-btn">Delete Account</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Account Confirmation Modal -->
+    <div id="deleteAccountModal" class="modal">
+        <div class="modal-content delete-modal">
+            <h3>Delete Account?</h3>
+            <p>This will permanently delete your account and all your data (transactions, categories, and settings). This action cannot be undone.</p>
+            <div class="settings-form-group" style="margin-bottom: 16px;">
+                <label for="deleteConfirmPassword">Enter your password to confirm</label>
+                <input type="password" id="deleteConfirmPassword" class="settings-input" placeholder="Your password">
+            </div>
+            <span id="deleteAccountMsg" class="settings-saved-msg"></span>
+            <div class="modal-buttons">
+                <button class="cancel-btn" id="cancelDeleteBtn">Cancel</button>
+                <button class="delete-confirm-btn" id="confirmDeleteAccountBtn">Delete My Account</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/init.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/settings.js"></script>
+</body>
+</html>

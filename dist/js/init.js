@@ -16,9 +16,11 @@ const db = firebase.database();
 // Global variables
 let transactionsRef;
 let categoriesRef;
+let settingsRef;
 let transactions = [];
 let editingCategory = null;
 let categoryToDelete = null;
+let userSettings = { currency: 'USD', dateFormat: 'MM/DD/YY' };
 
 // Default categories
 const defaultCategories = [
@@ -38,6 +40,13 @@ firebase.auth().onAuthStateChanged((user) => {
         // Define references after confirming user is logged in
         transactionsRef = db.ref(`users/${userUID}/transactions`);
         categoriesRef = db.ref(`users/${userUID}/categories`);
+        settingsRef = db.ref(`users/${userUID}/settings`);
+
+        settingsRef.once('value').then((snapshot) => {
+            if (snapshot.exists()) {
+                userSettings = Object.assign(userSettings, snapshot.val());
+            }
+        });
 
         
 
@@ -114,7 +123,7 @@ function updateStickyPositioning() {
 
 // Redirect to login if needed
 function redirectToLoginIfNeeded() {
-    const restrictedPages = ['/dashboard.html'];
+    const restrictedPages = ['/dashboard.html', '/transactions.html', '/budget.html', '/settings.html'];
     if (restrictedPages.includes(window.location.pathname)) {
         window.location.href = '/login.html';
     }
@@ -609,4 +618,3 @@ if (document.readyState === 'loading') {
 // Also run after a short delay to catch any dynamic content
 setTimeout(updateStickyPositioning, 100);
 setTimeout(updateStickyPositioning, 500);
-

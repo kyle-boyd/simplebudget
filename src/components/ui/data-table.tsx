@@ -33,6 +33,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { cn } from "@/lib/utils"
 
 interface CategoryFilterOption {
   id: string
@@ -58,6 +59,12 @@ interface DataTableProps<TData, TValue> {
   categoryFilterGroups?: CategoryGroup[]
   categoryFilterPlaceholder?: string
   initialCategoryFilter?: string
+  /** Column ids to force-hide (e.g. on mobile show only Name, Date, Amount) */
+  forceHiddenColumnIds?: string[]
+  /** Use compact row/header padding (e.g. for mobile) */
+  compact?: boolean
+  /** Override column order (e.g. ['Description', 'Date', 'Amount'] for mobile) */
+  columnOrder?: string[]
 }
 
 export function DataTable<TData, TValue>({
@@ -72,8 +79,12 @@ export function DataTable<TData, TValue>({
   categoryFilterGroups = [],
   categoryFilterPlaceholder = "Filter by category",
   initialCategoryFilter,
+  forceHiddenColumnIds,
+  compact = false,
+  columnOrder: columnOrderProp,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([])
+  const [columnOrderState, setColumnOrderState] = React.useState<string[] | undefined>(() => columnOrderProp)
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(() => {
     // Initialize with category filter if provided
     if (initialCategoryFilter && categoryFilterKey) {
@@ -82,14 +93,27 @@ export function DataTable<TData, TValue>({
     return []
   })
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({})
+
+  const effectiveColumnVisibility: VisibilityState = React.useMemo(() => ({
+    ...columnVisibility,
+    ...(forceHiddenColumnIds?.length
+      ? Object.fromEntries(forceHiddenColumnIds.map((id) => [id, false]))
+      : {}),
+  }), [columnVisibility, forceHiddenColumnIds])
   const [rowSelection, setRowSelection] = React.useState({})
   const [globalFilter, setGlobalFilter] = React.useState("")
+
+  // Sync column order from prop (e.g. mobile order); clear when prop is undefined
+  React.useEffect(() => {
+    setColumnOrderState(columnOrderProp)
+  }, [columnOrderProp])
 
   const table = useReactTable({
     data,
     columns,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
+    onColumnOrderChange: setColumnOrderState,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
@@ -106,7 +130,8 @@ export function DataTable<TData, TValue>({
     state: {
       sorting,
       columnFilters,
-      columnVisibility,
+      columnVisibility: effectiveColumnVisibility,
+      ...(columnOrderState != null && { columnOrder: columnOrderState }),
       rowSelection,
       globalFilter,
     },
@@ -195,27 +220,32 @@ export function DataTable<TData, TValue>({
       </div>
       <div className="rounded-md border">
         <Table>
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header, headerIndex) => {
-                  return (
-                    <TableHead 
-                      key={header.id}
-                      className={headerIndex === 0 ? "pl-6" : ""}
-                    >
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext()
-                          )}
-                    </TableHead>
-                  )
-                })}
-              </TableRow>
-            ))}
-          </TableHeader>
+          {!compact && (
+            <TableHeader>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header, headerIndex) => {
+                    return (
+                      <TableHead 
+                        key={header.id}
+                        className={cn(
+                          headerIndex === 0 ? "pl-6" : "",
+                          compact && "px-2 py-1.5 h-9"
+                        )}
+                      >
+                        {header.isPlaceholder
+                          ? null
+                          : flexRender(
+                              header.column.columnDef.header,
+                              header.getContext()
+                            )}
+                      </TableHead>
+                    )
+                  })}
+                </TableRow>
+              ))}
+            </TableHeader>
+          )}
           <TableBody>
             {table.getRowModel().rows?.length ? (
               table.getRowModel().rows.map((row) => (
@@ -228,7 +258,10 @@ export function DataTable<TData, TValue>({
                   {row.getVisibleCells().map((cell, cellIndex) => (
                     <TableCell 
                       key={cell.id}
-                      className={cellIndex === 0 ? "pl-6" : ""}
+                      className={cn(
+                        cellIndex === 0 ? "pl-6" : "",
+                        compact && "px-2 py-1.5"
+                      )}
                     >
                       {flexRender(
                         cell.column.columnDef.cell,

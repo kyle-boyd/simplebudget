@@ -23,8 +23,9 @@
         </div>
         <div class="nav-items">
             <a href="dashboard.html" class="nav-item">Dashboard</a>
-            <a href="index.html" class="nav-item active">Transactions</a>
+            <a href="transactions.html" class="nav-item active">Transactions</a>
             <a href="budget.html" class="nav-item">Budget</a>
+            <a href="settings.html" class="nav-item">Settings</a>
             <button class="nav-item logout" id="logout-button">Log Out</button>
         </div>
     </nav>
@@ -78,29 +79,32 @@
                 </div>
             </div>
 
-            <div class="edit-panel" id="editPanel">
-                <div class="edit-panel-content">
-                    <h3 id="editDescription"></h3>
-                    <span id="editDate"></span>
-                    <span id="editAmount"></span>
+            <div class="edit-panel-outer">
+                <div class="bottom-sheet-backdrop" id="editPanelBackdrop" aria-hidden="true"></div>
+                <div class="edit-panel" id="editPanel">
+                    <div class="edit-panel-content">
+                        <h3 id="editDescription"></h3>
+                        <span id="editDate"></span>
+                        <span id="editAmount"></span>
 
-                    <div class="category-select">
-                        <div class="category-tag" id="editCategoryTag">Select Category</div>
-                        <div class="category-dropdown">
-                            <!-- Will be populated by JavaScript -->
+                        <div class="category-select">
+                            <div class="category-tag" id="editCategoryTag">Select Category</div>
+                            <div class="category-dropdown">
+                                <!-- Will be populated by JavaScript -->
+                            </div>
                         </div>
-                    </div>
 
-                    <div>
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="categorizeCheckbox">
-                            <span>Always categorize as: <strong><span id="editCategoryTagLabel"></span></strong></span>
-                        </label>
-                    </div>
+                        <div>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="categorizeCheckbox">
+                                <span>Always categorize as: <strong><span id="editCategoryTagLabel"></span></strong></span>
+                            </label>
+                        </div>
 
-                    <div id="btmButtons">
-                        <button id="closePanelButton">Cancel</button>
-                        <button id="saveChangesButton">Save</button>
+                        <div id="btmButtons">
+                            <button id="closePanelButton">Cancel</button>
+                            <button id="saveChangesButton">Save</button>
+                        </div>
                     </div>
                 </div>
             </div>

@@ -1,4 +1,4 @@
-/* login.css */
+/* login.css – mobile-first auth */
 
 @import url('./css/tokens.css');
 
@@ -8,17 +8,22 @@ body {
     display: flex;
     justify-content: center;
     align-items: center;
-    height: 100vh;
+    min-height: 100vh;
+    min-height: 100dvh;
     margin: 0;
+    padding: var(--spacing-16);
+    box-sizing: border-box;
 }
 
 .auth-container {
     background: var(--fill-white);
     padding: var(--spacing-24);
-    border: 1px solid var(--stroke-weak); /* Use token for border color */
-    border-radius: var(--corner-radius-24); /* Rounded corners */
-    
-    width: 400px; /* Set a fixed width for the container */
+    border: 1px solid var(--stroke-weak);
+    border-radius: var(--corner-radius-24);
+    width: 100%;
+    max-width: 400px;
+    box-sizing: border-box;
+    min-height: 280px;
 }
 
 .form-container {
@@ -38,16 +43,29 @@ label {
 input {
     margin-bottom: var(--spacing-12);
     margin-top: var(--spacing-12);
-    padding: var(--spacing-12);
-    border: 1px solid var(--stroke-strong); /* Use token for input border color */
+    padding: var(--spacing-12) var(--spacing-16);
+    min-height: 48px;
+    font-size: 16px;
+    border: 1px solid var(--stroke-strong);
     border-radius: var(--corner-radius-4);
-    width: 100%; /* Make input fill the width of the container */
-    box-sizing: border-box; /* Include padding and border in the element's total width */
+    width: 100%;
+    box-sizing: border-box;
+}
+
+input:focus {
+    outline: 2px solid var(--stroke-focus);
+    outline-offset: 2px;
+}
+
+input::placeholder {
+    color: var(--text-weak);
 }
 
 button {
-    padding: var(--spacing-12);
-    background-color: var(--fill-strong); /* Use token for button background */
+    padding: var(--spacing-12) var(--spacing-16);
+    min-height: 48px;
+    font-size: 1rem;
+    background-color: var(--fill-strong);
     color: var(--fill-white);
     border: none;
     border-radius: 12px;
@@ -55,16 +73,74 @@ button {
     width: 100%;
     margin-top: var(--spacing-12);
     margin-bottom: var(--spacing-12);
+    box-sizing: border-box;
+    transition: background-color 0.2s ease, opacity 0.2s ease;
 }
 
-button:hover {
-    background: linear-gradient(to bottom, var(--fill-inverse-weak), var(--fill-inverse-weak)), 
+button:hover:not(:disabled) {
+    background: linear-gradient(to bottom, var(--fill-inverse-weak), var(--fill-inverse-weak)),
                 linear-gradient(to bottom, var(--fill-strong), var(--fill-strong));
     background-blend-mode: screen;
 }
 
+button:focus-visible {
+    outline: 2px solid var(--stroke-focus);
+    outline-offset: 2px;
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.8;
+}
+
+.auth-submit-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-8);
+}
+
+.auth-btn-spinner {
+    display: none;
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--fill-white);
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: auth-spin 0.7s linear infinite;
+}
+
+.auth-btn-spinner-visible {
+    display: block;
+}
+
+@keyframes auth-spin {
+    to { transform: rotate(360deg); }
+}
+
+.auth-error {
+    margin-bottom: var(--spacing-12);
+    padding: var(--spacing-12) var(--spacing-16);
+    border-radius: var(--corner-radius-4);
+    background: var(--fill-error-weak);
+    border: 1px solid var(--stroke-error-weak);
+    color: var(--text-error);
+    font-size: 0.9375rem;
+    line-height: 1.4;
+    display: none;
+}
+
+.auth-error.auth-error-visible {
+    display: block;
+}
+
 .google-auth {
     margin: var(--spacing-10) 0;
+}
+
+.auth-google-btn {
+    min-height: 48px;
 }
 
 p {
@@ -72,14 +148,29 @@ p {
 }
 
 a {
-    color: var(--text-strong); /* Use token for link color */
+    color: var(--text-strong);
     text-decoration: none;
+    padding: var(--spacing-4) 0;
 }
 
 a:hover {
     text-decoration: underline;
 }
 
+a:focus-visible {
+    outline: 2px solid var(--stroke-focus);
+    outline-offset: 2px;
+}
+
 h2 {
     font-size: var(--font-size-heading-1);
+}
+
+@supports (padding: env(safe-area-inset-bottom)) {
+    body {
+        padding-left: max(var(--spacing-16), env(safe-area-inset-left));
+        padding-right: max(var(--spacing-16), env(safe-area-inset-right));
+        padding-bottom: max(var(--spacing-16), env(safe-area-inset-bottom));
+        padding-top: max(var(--spacing-16), env(safe-area-inset-top));
+    }
 }

@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/ui/responsive-dialog';
 import { useAuth } from '@/hooks/useAuth';
 import { useCategories, Category, Subcategory } from '@/hooks/useCategories';
 import { useTransactions } from '@/hooks/useTransactions';
@@ -611,14 +612,14 @@ export function Budget() {
           )}
         </div>
 
-        <Dialog open={isModalOpen} onOpenChange={(open) => {
+        <ResponsiveDialog open={isModalOpen} onOpenChange={(open) => {
           setIsModalOpen(open);
           if (!open) {
             setShowDeleteConfirmation(false);
             setNameError('');
           }
         }}>
-          <DialogContent>
+          <ResponsiveDialogContent>
             <DialogHeader>
               <DialogTitle>
                 {editingCategory?.category ? 'Edit Category' :
@@ -731,8 +732,8 @@ export function Budget() {
                 )}
               </div>
             </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          </ResponsiveDialogContent>
+        </ResponsiveDialog>
       </div>
     </Layout>
   );

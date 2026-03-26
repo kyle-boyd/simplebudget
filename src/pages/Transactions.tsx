@@ -9,7 +9,8 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel, SelectSeparator } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/ui/responsive-dialog';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { DataTable } from '@/components/ui/data-table';
 import { useAuth } from '@/hooks/useAuth';
@@ -327,7 +328,11 @@ export function Transactions() {
         )
       },
       cell: ({ row }) => {
-        return <div className="min-w-[200px]">{row.getValue("Description")}</div>
+        return (
+          <div className="min-w-0 lg:min-w-[200px] truncate" title={String(row.getValue("Description") || '')}>
+            {row.getValue("Description")}
+          </div>
+        )
       },
     },
     {
@@ -347,7 +352,23 @@ export function Transactions() {
         )
       },
       cell: ({ row }) => {
+        const transaction = row.original;
         const amount = parseFloat(String(row.getValue("Amount")));
+        const dateParts = transaction.Date.split('/');
+        const date = new Date(2000 + parseInt(dateParts[2]), parseInt(dateParts[0]) - 1, parseInt(dateParts[1]));
+        const formattedDate = date.toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric'
+        });
+        if (isMobile) {
+          return (
+            <div className="text-right">
+              <div className="font-medium">{formatCurrency(amount)}</div>
+              <div className="text-xs text-muted-foreground">{formattedDate}</div>
+            </div>
+          );
+        }
         return <div className="text-right font-medium">{formatCurrency(amount)}</div>
       },
     },
@@ -458,7 +479,7 @@ export function Transactions() {
         )
       },
     },
-  ], [categories, categoryOptions, handleCategoryChange, toggleConfirm]);
+  ], [categories, categoryOptions, handleCategoryChange, toggleConfirm, isMobile]);
 
   const isMobileSheetOpen = isMobile && isEditPanelOpen && !!selectedTransaction;
 
@@ -507,6 +528,9 @@ export function Transactions() {
             categoryFilterGroups={categoryGroups}
             categoryFilterPlaceholder="Filter by category"
             initialCategoryFilter={categoryFilterFromUrl}
+            forceHiddenColumnIds={isMobile ? ['select', 'Category', 'confirmed', 'Date'] : undefined}
+            compact={isMobile}
+            columnOrder={isMobile ? ['Description', 'Amount', 'select', 'Category', 'confirmed', 'Date'] : undefined}
             onRowClick={(transaction) => {
               setSelectedTransaction(transaction);
               setSelectedCategory(transaction.Category || '');
@@ -608,17 +632,20 @@ export function Transactions() {
       >
         <SheetContent 
           side="bottom" 
-          className="lg:hidden" 
+          className="lg:hidden max-h-[85vh] overflow-y-auto rounded-t-lg" 
           hideOverlay
           onPointerDownOutside={(e) => e.preventDefault()}
           onInteractOutside={(e) => e.preventDefault()}
         >
             {selectedTransaction && (
               <>
+                <div className="flex justify-center pt-1 pb-2" aria-hidden>
+                  <div className="w-9 h-1 rounded-full bg-muted-foreground/30" />
+                </div>
                 <SheetHeader>
                   <SheetTitle>{selectedTransaction.Description}</SheetTitle>
                 </SheetHeader>
-                <div className="space-y-4 mt-4" onClick={(e) => e.stopPropagation()}>
+                <div className="space-y-4 mt-4 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
                   <div>
                     <div className="text-sm text-muted-foreground">
                       {new Date(2000 + parseInt(selectedTransaction.Date.split('/')[2]), 
@@ -687,8 +714,8 @@ export function Transactions() {
           </SheetContent>
         </Sheet>
 
-        <Dialog open={showMappingModal} onOpenChange={setShowMappingModal}>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <ResponsiveDialog open={showMappingModal} onOpenChange={setShowMappingModal}>
+          <ResponsiveDialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Match CSV Columns</DialogTitle>
             </DialogHeader>
@@ -818,8 +845,8 @@ export function Transactions() {
               </Button>
               <Button onClick={handleSaveMapping}>Import Transactions</Button>
             </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          </ResponsiveDialogContent>
+        </ResponsiveDialog>
       </div>
     </Layout>
   );

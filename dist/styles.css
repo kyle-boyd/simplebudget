@@ -1181,3 +1181,262 @@ button {
     border-radius: 2px; /* Rounded corners for checkmark */
     margin: 3px; /* Center the checkmark */
 }
+
+/* Edit panel outer wrapper — transparent on desktop */
+.edit-panel-outer {
+    display: contents;
+}
+
+.bottom-sheet-backdrop {
+    display: none;
+}
+
+/* Mobile bottom sheet */
+@media (max-width: 768px) {
+    .edit-panel-outer {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 1100;
+        pointer-events: none;
+        visibility: hidden;
+    }
+
+    .edit-panel-outer:has(.edit-panel.open) {
+        pointer-events: auto;
+        visibility: visible;
+    }
+
+    .edit-panel-outer:has(.edit-panel.open) .bottom-sheet-backdrop {
+        display: block;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.4);
+        z-index: 0;
+    }
+
+    .edit-panel-outer .edit-panel {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        width: 100% !important;
+        max-height: 85vh;
+        top: auto;
+        z-index: 1;
+        box-sizing: border-box;
+        overflow: visible;
+        transform: translateY(100%);
+        transition: transform 0.3s ease;
+    }
+
+    .edit-panel-outer .edit-panel.open {
+        width: 100% !important;
+        border-radius: 24px 24px 0 0;
+        padding: 24px;
+        padding-bottom: calc(24px + env(safe-area-inset-bottom));
+        overflow-y: auto;
+        transform: translateY(0);
+    }
+
+    .edit-panel-outer .edit-panel .edit-panel-content {
+        width: auto;
+    }
+
+    .edit-panel-outer .edit-panel.open .edit-panel-content {
+        opacity: 1;
+    }
+}
+
+/* Settings Page */
+.settings-page {
+    padding: 0;
+    max-width: 720px;
+}
+
+.settings-header {
+    padding: 24px 0;
+}
+
+.settings-header h2 {
+    font-size: var(--font-size-heading-2);
+    margin: 0;
+    height: 51.5px;
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+}
+
+.settings-section {
+    margin-bottom: 32px;
+}
+
+.settings-section-title {
+    font-size: var(--font-size-heading-4);
+    font-weight: var(--font-weight-strong);
+    margin: 0 0 12px 0;
+    padding: 0 24px;
+    color: var(--text-strong);
+}
+
+.settings-section-title.danger {
+    color: var(--text-error);
+}
+
+.settings-card {
+    background-color: var(--background-raised);
+    border-radius: 32px;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.settings-card.danger-card {
+    border: 1px solid var(--stroke-error-weak);
+}
+
+.settings-form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.settings-form-group label {
+    font-size: var(--font-size-tiny);
+    color: var(--text-weak);
+}
+
+.settings-input,
+.settings-select {
+    padding: 10px 12px;
+    border: 1px solid var(--stroke-weak);
+    border-radius: 8px;
+    font-size: var(--font-size-small);
+    font-family: var(--font-family-body);
+    background-color: var(--background-base);
+    color: var(--text-strong);
+    outline: none;
+    transition: border-color 0.2s ease;
+}
+
+.settings-input:focus,
+.settings-select:focus {
+    border-color: var(--stroke-brand-strong);
+    box-shadow: 0 0 0 2px var(--blue-light-200);
+}
+
+.settings-input:disabled {
+    color: var(--text-weak);
+    background-color: var(--fill-weak);
+    cursor: not-allowed;
+}
+
+.settings-select {
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 16px;
+    padding-right: 36px;
+}
+
+.settings-form-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 8px;
+}
+
+.settings-saved-msg {
+    font-size: var(--font-size-tiny);
+    display: none;
+}
+
+.settings-saved-msg.success {
+    color: var(--text-success);
+}
+
+.settings-saved-msg.error {
+    color: var(--text-error);
+}
+
+.danger-zone-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 24px;
+}
+
+.danger-title {
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-strong);
+    color: var(--text-strong);
+    margin: 0 0 4px 0;
+}
+
+.danger-description {
+    font-size: var(--font-size-tiny);
+    color: var(--text-weak);
+    margin: 0;
+}
+
+.delete-account-btn {
+    padding: 8px 16px;
+    background-color: var(--fill-error-strong);
+    color: var(--text-inverse-strong);
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    font-family: var(--font-family-body);
+    font-size: var(--font-size-tiny);
+    font-weight: var(--font-weight-strong);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.delete-account-btn:hover {
+    opacity: 0.9;
+}
+
+/* Mobile: simplified transaction table (Name, Date, Amount only) */
+@media (max-width: 768px) {
+    .mainContent {
+        margin-left: 0;
+        padding: 0 16px;
+    }
+
+    .header-checkbox,
+    .header-category,
+    .header-status {
+        display: none;
+    }
+
+    .transaction-content > .custom-checkbox,
+    .transaction-content > .category-select,
+    .transaction-content > .confirm-button {
+        display: none;
+    }
+
+    .transaction-header {
+        padding: 12px 16px 8px 16px;
+        gap: 12px;
+    }
+
+    .transaction-content {
+        padding: 12px 16px;
+        gap: 12px;
+    }
+
+    .transaction-date,
+    .header-date {
+        width: 60px;
+    }
+
+    .transaction-amount,
+    .header-amount {
+        width: 90px;
+        padding-right: 0;
+    }
+}

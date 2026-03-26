@@ -72,7 +72,47 @@ This will start:
 - **Database Emulator** at `http://localhost:9000`
 - **Emulator UI** at `http://localhost:4000`
 
-## Using the Emulators
+## Testing locally: two options
+
+### Option A: With emulators (recommended for offline / test data)
+
+You need the Auth emulator running so the app can reach `localhost:9099`. Either:
+
+**One command (emulators + dev server together):**
+```bash
+npm run dev:local
+```
+
+**Or two terminals:**
+1. Terminal 1 – start emulators:
+   ```bash
+   npm run emulators:start
+   ```
+2. Terminal 2 – start the app:
+   ```bash
+   npm run dev
+   ```
+
+Requires **Java 21+** (see Prerequisites above). Emulator UI: http://localhost:4000 (create test users there if needed).
+
+### Option B: Without emulators (use production Firebase)
+
+To test against your real Firebase project (no Java, no emulator):
+
+1. Create a file `.env.local` in the project root with:
+   ```
+   VITE_USE_FIREBASE_EMULATORS=false
+   ```
+2. Start the app:
+   ```bash
+   npm run dev
+   ```
+
+Login/signup will use your live Firebase Auth. Make sure your email is allowed in the Firebase Console if you use sign-in.
+
+---
+
+## Using the Emulators (when running)
 
 1. Start the emulators in one terminal:
    ```bash

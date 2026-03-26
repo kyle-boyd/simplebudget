@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/sidebar';
 import { useAuth } from '@/hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Receipt, Wallet, LogOut } from 'lucide-react';
+import { LayoutDashboard, Receipt, Wallet, Settings as SettingsIcon, LogOut } from 'lucide-react';
 
 interface SidebarProps {
   onNavigate?: () => void;
@@ -64,6 +64,15 @@ export function Sidebar({ onNavigate }: SidebarProps) {
           <Link to="/budget" onClick={handleNavigation}>
             <Wallet className="h-5 w-5" />
             Budget
+          </Link>
+        </SidebarItem>
+        <SidebarItem
+          asChild
+          variant={isActive('/settings') ? 'active' : 'default'}
+        >
+          <Link to="/settings" onClick={handleNavigation}>
+            <SettingsIcon className="h-5 w-5" />
+            Settings
           </Link>
         </SidebarItem>
       </SidebarContent>
