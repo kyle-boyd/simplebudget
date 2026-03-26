@@ -44,6 +44,7 @@ export function Transactions() {
   const [pendingRule, setPendingRule] = useState<{ matchText: string; category: string } | null>(null);
   const [conflictingRule, setConflictingRule] = useState<Rule | null>(null);
   const [ruleScope, setRuleScope] = useState<'future' | 'all'>('future');
+  const [isOverridingRule, setIsOverridingRule] = useState(false);
   const [showMappingModal, setShowMappingModal] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvMappings, setCsvMappings] = useState<Record<string, string>>({});
@@ -284,6 +285,7 @@ export function Transactions() {
     setConflictingRule(null);
     setSelectedTransaction(null);
     setCreateRule(false);
+    setIsOverridingRule(false);
   };
 
   const allSubcategories = categories.flatMap(cat =>
@@ -616,6 +618,8 @@ export function Transactions() {
             onRowClick={(transaction) => {
               setSelectedTransaction(transaction);
               setSelectedCategory(transaction.Category || '');
+              setCreateRule(transaction.hasRule || false);
+              setIsOverridingRule(false);
               setIsEditPanelOpen(true);
             }}
             getRowClassName={(transaction) => {
@@ -655,7 +659,16 @@ export function Transactions() {
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">Category</label>
-                <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                <Select
+                  value={selectedCategory}
+                  onValueChange={(value) => {
+                    setSelectedCategory(value);
+                    if (selectedTransaction?.hasRule && createRule && value !== selectedTransaction.Category) {
+                      setCreateRule(false);
+                      setIsOverridingRule(true);
+                    }
+                  }}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select category" />
                   </SelectTrigger>
@@ -677,11 +690,23 @@ export function Transactions() {
                 </Select>
               </div>
 
+              {isOverridingRule && (
+                <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3">
+                  <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                  <p className="text-xs text-amber-800 dark:text-amber-300">
+                    This overrides the existing rule. Only this transaction will be recategorized.
+                  </p>
+                </div>
+              )}
+
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="create-rule"
                   checked={createRule}
-                  onCheckedChange={(checked) => setCreateRule(checked as boolean)}
+                  onCheckedChange={(checked) => {
+                    setCreateRule(checked as boolean);
+                    if (checked) setIsOverridingRule(false);
+                  }}
                 />
                 <label htmlFor="create-rule" className="text-sm">
                   Always categorize as: <strong>{selectedCategory || 'Select Category'}</strong>
@@ -691,7 +716,10 @@ export function Transactions() {
               <div className="flex gap-2">
                 <Button
                   variant="outline"
-                  onClick={() => setIsEditPanelOpen(false)}
+                  onClick={() => {
+                    setIsEditPanelOpen(false);
+                    setIsOverridingRule(false);
+                  }}
                   className="flex-1"
                 >
                   Cancel
@@ -745,7 +773,16 @@ export function Transactions() {
 
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Category</label>
-                    <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                    <Select
+                      value={selectedCategory}
+                      onValueChange={(value) => {
+                        setSelectedCategory(value);
+                        if (selectedTransaction?.hasRule && createRule && value !== selectedTransaction.Category) {
+                          setCreateRule(false);
+                          setIsOverridingRule(true);
+                        }
+                      }}
+                    >
                       <SelectTrigger>
                         <SelectValue placeholder="Select category" />
                       </SelectTrigger>
@@ -767,11 +804,23 @@ export function Transactions() {
                     </Select>
                   </div>
 
+                  {isOverridingRule && (
+                    <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3">
+                      <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                      <p className="text-xs text-amber-800 dark:text-amber-300">
+                        This overrides the existing rule. Only this transaction will be recategorized.
+                      </p>
+                    </div>
+                  )}
+
                   <div className="flex items-center space-x-2">
                     <Checkbox
                       id="create-rule-mobile"
                       checked={createRule}
-                      onCheckedChange={(checked) => setCreateRule(checked as boolean)}
+                      onCheckedChange={(checked) => {
+                        setCreateRule(checked as boolean);
+                        if (checked) setIsOverridingRule(false);
+                      }}
                     />
                     <label htmlFor="create-rule-mobile" className="text-sm">
                       Always categorize as: <strong>{selectedCategory || 'Select Category'}</strong>
@@ -781,7 +830,10 @@ export function Transactions() {
                   <div className="flex gap-2">
                     <Button
                       variant="outline"
-                      onClick={() => setIsEditPanelOpen(false)}
+                      onClick={() => {
+                        setIsEditPanelOpen(false);
+                        setIsOverridingRule(false);
+                      }}
                       className="flex-1"
                     >
                       Cancel

@@ -29,6 +29,7 @@ export function Budget() {
   const [editingCategory, setEditingCategory] = useState<{ category?: Category; subcategory?: Subcategory; parentId?: number } | null>(null);
   const [formData, setFormData] = useState({ name: '', amount: '' });
   const [editingAmounts, setEditingAmounts] = useState<{ [key: number]: string }>({});
+  const [editingCategoryAmounts, setEditingCategoryAmounts] = useState<{ [key: number]: string }>({});
   const [editingNames, setEditingNames] = useState<{ [key: number]: string }>({});
   const [modalAmountValue, setModalAmountValue] = useState<string>('');
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
@@ -79,11 +80,37 @@ export function Budget() {
         return parseInt(tMonth) === monthIndex && tYear === year.slice(-2);
       });
 
+  // Get the last 3 months sorted descending (most recent first)
+  const lastThreeMonths = (() => {
+    const monthSet = new Set(
+      transactions.map(t => {
+        const [month, , year] = t.Date.split('/');
+        return `${year.padStart(2, '0')}-${month.padStart(2, '0')}`;
+      })
+    );
+    return Array.from(monthSet).sort().reverse().slice(0, 3);
+  })();
+
   // Calculate spending for a subcategory
   const getSubcategorySpending = (subcategoryName: string): number => {
-    return filteredTransactions
-      .filter(t => t.Category?.trim() === subcategoryName.trim())
-      .reduce((sum, t) => sum + Math.abs(t.Amount), 0);
+    if (selectedMonth !== 'All Months') {
+      return filteredTransactions
+        .filter(t => t.Category?.trim() === subcategoryName.trim())
+        .reduce((sum, t) => sum + Math.abs(t.Amount), 0);
+    }
+    // Average of last 3 months
+    if (lastThreeMonths.length === 0) return 0;
+    const total = lastThreeMonths.reduce((sum, ym) => {
+      const [yr, mo] = ym.split('-');
+      const monthTotal = transactions
+        .filter(t => {
+          const [tMonth, , tYear] = t.Date.split('/');
+          return tMonth.padStart(2, '0') === mo && tYear.padStart(2, '0') === yr && t.Category?.trim() === subcategoryName.trim();
+        })
+        .reduce((s, t) => s + Math.abs(t.Amount), 0);
+      return sum + monthTotal;
+    }, 0);
+    return total / lastThreeMonths.length;
   };
 
   // Calculate spending for a category (sum of all subcategories)
@@ -395,7 +422,10 @@ export function Budget() {
 
         <div className="space-y-4">
           {regularCategories.map(category => {
-            const totalAmount = (category.subcategories || []).reduce((sum, sub) => sum + (sub.amount || 0), 0);
+            const hasSubcategories = (category.subcategories || []).length > 0;
+            const totalAmount = hasSubcategories
+              ? (category.subcategories || []).reduce((sum, sub) => sum + (sub.amount || 0), 0)
+              : (category.amount || 0);
             const categorySpending = getCategorySpending(category);
             const isOverBudget = categorySpending > totalAmount;
             return (
@@ -421,7 +451,43 @@ export function Budget() {
                       <div className="flex items-center gap-4 lg:gap-16">
                         <div className="text-right">
                           <div className="text-sm text-muted-foreground">Budget</div>
-                          <div className="font-semibold">{formatCurrency(totalAmount)}</div>
+                          {hasSubcategories ? (
+                            <div className="font-semibold">{formatCurrency(totalAmount)}</div>
+                          ) : (
+                            <Input
+                              type="text"
+                              value={
+                                editingCategoryAmounts[category.id] !== undefined
+                                  ? editingCategoryAmounts[category.id]
+                                  : formatAmountForInput(category.amount)
+                              }
+                              onChange={(e) => {
+                                let value = e.target.value;
+                                if (!value.startsWith('$')) {
+                                  if (value === '' || /^\d/.test(value)) {
+                                    value = '$' + value;
+                                  }
+                                }
+                                setEditingCategoryAmounts({ ...editingCategoryAmounts, [category.id]: value });
+                              }}
+                              onBlur={(e) => {
+                                const cleanedValue = e.target.value.replace(/[$,]/g, '');
+                                const amount = parseFloat(cleanedValue) || 0;
+                                updateCategory(category.id, { amount });
+                                const newEditing = { ...editingCategoryAmounts };
+                                delete newEditing[category.id];
+                                setEditingCategoryAmounts(newEditing);
+                              }}
+                              onFocus={() => {
+                                const amount = category.amount || 0;
+                                setEditingCategoryAmounts({
+                                  ...editingCategoryAmounts,
+                                  [category.id]: amount % 1 === 0 ? `$${amount.toFixed(0)}` : `$${amount.toFixed(2)}`,
+                                });
+                              }}
+                              className="h-8 w-[80px] lg:w-[120px] text-right font-semibold"
+                            />
+                          )}
                         </div>
                         <div className="text-right">
                           <div className="text-sm text-muted-foreground">Spent</div>

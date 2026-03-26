@@ -12,6 +12,7 @@ export interface Subcategory {
 export interface Category {
   id: number;
   name: string;
+  amount?: number;
   subcategories: Subcategory[];
   isSystem?: boolean;
 }
