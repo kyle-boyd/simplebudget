@@ -213,7 +213,9 @@ export function Dashboard() {
     const categoryBudgets: Record<string, number> = {};
     categories.forEach(cat => {
       if (cat.name !== "Hide from Budget") {
-        categoryBudgets[cat.name] = cat.subcategories.reduce((sum, sub) => sum + (sub.amount || 0), 0);
+        categoryBudgets[cat.name] = (cat.subcategories || []).length > 0
+          ? cat.subcategories.reduce((sum, sub) => sum + (sub.amount || 0), 0)
+          : (cat.amount || 0);
       }
     });
     
@@ -266,7 +268,9 @@ export function Dashboard() {
     const categoryBudgets: Record<string, number> = {};
     categories.forEach(cat => {
       if (cat.name !== "Hide from Budget") {
-        categoryBudgets[cat.name] = cat.subcategories.reduce((sum, sub) => sum + (sub.amount || 0), 0);
+        categoryBudgets[cat.name] = (cat.subcategories || []).length > 0
+          ? cat.subcategories.reduce((sum, sub) => sum + (sub.amount || 0), 0)
+          : (cat.amount || 0);
       }
     });
 
@@ -368,12 +372,16 @@ export function Dashboard() {
 
   // Yearly budget chart data
   const yearlyData = (() => {
-    const validSubcategories = new Set<string>();
+    const validCategories = new Set<string>();
     categories.forEach(category => {
       if (!category.isSystem) {
-        category.subcategories.forEach(sub => {
-          validSubcategories.add(sub.name.trim().toLowerCase());
-        });
+        if ((category.subcategories || []).length === 0) {
+          validCategories.add(category.name.trim().toLowerCase());
+        } else {
+          category.subcategories.forEach(sub => {
+            validCategories.add(sub.name.trim().toLowerCase());
+          });
+        }
       }
     });
 
@@ -381,7 +389,7 @@ export function Dashboard() {
     transactions.forEach(transaction => {
       if (!transaction.Category || !transaction.Date) return;
       const transactionCategory = transaction.Category.trim().toLowerCase();
-      if (!validSubcategories.has(transactionCategory)) return;
+      if (!validCategories.has(transactionCategory)) return;
 
       const dateParts = transaction.Date.split('/');
       const month = parseInt(dateParts[0]) - 1;
@@ -391,9 +399,13 @@ export function Dashboard() {
     let totalBudget = 0;
     categories.forEach(category => {
       if (!category.isSystem) {
-        category.subcategories.forEach(sub => {
-          totalBudget += sub.amount || 0;
-        });
+        if ((category.subcategories || []).length === 0) {
+          totalBudget += category.amount || 0;
+        } else {
+          category.subcategories.forEach(sub => {
+            totalBudget += sub.amount || 0;
+          });
+        }
       }
     });
 
