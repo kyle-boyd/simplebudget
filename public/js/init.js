@@ -1,13 +1,3 @@
-const firebaseConfig = {
-    apiKey: "AIzaSyBnP-fWyPoKEABnQ2KSFuJv8CL7fqWSoKQ",
-    authDomain: "simple-budgeting-5f9cb.firebaseapp.com",
-    projectId: "simple-budgeting-5f9cb",
-    storageBucket: "simple-budgeting-5f9cb.firebasestorage.app",
-    messagingSenderId: "4204953002",
-    appId: "1:4204953002:web:b57ab7d41c7abd23587fd3",
-    measurementId: "G-K969YZNXGC"
-};
-
 // Initialize Firebase
 const app = firebase.initializeApp(firebaseConfig);
 const db = firebase.database();

@@ -14,7 +14,8 @@ firebase-debug.*.log*
 firebase-export-*/
 ui-debug.log
 
-# Firebase config
+# Firebase config (contains API key - generated from secrets at deploy time)
+public/js/firebase-config.js
 
 # Uncomment this if you'd like others to create their own Firebase project.
 # For a team working on the same Firebase project(s), it is recommended to leave
