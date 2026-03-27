@@ -69,6 +69,14 @@ interface DataTableProps<TData, TValue> {
   onSwipeRight?: (row: TData) => void
   /** Returns 'confirm' or 'unconfirm' to determine swipe indicator color/icon */
   getSwipeAction?: (row: TData) => 'confirm' | 'unconfirm'
+  /** Extra filter controls rendered next to the category filter */
+  extraFilters?: React.ReactNode
+  /** Hide the built-in search bar (e.g. when providing an external one) */
+  hideSearchBar?: boolean
+  /** External controlled value for global filter */
+  externalGlobalFilter?: string
+  /** External controlled value for category filter */
+  externalCategoryFilter?: string
 }
 
 export function DataTable<TData, TValue>({
@@ -88,6 +96,10 @@ export function DataTable<TData, TValue>({
   columnOrder: columnOrderProp,
   onSwipeRight,
   getSwipeAction,
+  extraFilters,
+  hideSearchBar = false,
+  externalGlobalFilter,
+  externalCategoryFilter,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([])
   const [columnOrderState, setColumnOrderState] = React.useState<string[] | undefined>(() => columnOrderProp)
@@ -108,6 +120,25 @@ export function DataTable<TData, TValue>({
   }), [columnVisibility, forceHiddenColumnIds])
   const [rowSelection, setRowSelection] = React.useState({})
   const [globalFilter, setGlobalFilter] = React.useState("")
+
+  // Sync external global filter
+  React.useEffect(() => {
+    if (externalGlobalFilter !== undefined) {
+      setGlobalFilter(externalGlobalFilter)
+    }
+  }, [externalGlobalFilter])
+
+  // Sync external category filter
+  React.useEffect(() => {
+    if (externalCategoryFilter === undefined || !categoryFilterKey) return
+    setColumnFilters(prev => {
+      const without = prev.filter(f => f.id !== categoryFilterKey)
+      if (externalCategoryFilter === 'all' || externalCategoryFilter === '') {
+        return without
+      }
+      return [...without, { id: categoryFilterKey, value: externalCategoryFilter }]
+    })
+  }, [externalCategoryFilter, categoryFilterKey])
 
   // Swipe-to-confirm state
   const SWIPE_THRESHOLD = 80
@@ -173,7 +204,7 @@ export function DataTable<TData, TValue>({
     <div className="w-full space-y-4">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-4 flex-1">
-          {searchKey && (
+          {!hideSearchBar && searchKey && (
             <Input
               placeholder={searchPlaceholder}
               value={(table.getColumn(searchKey)?.getFilterValue() as string) ?? ""}
@@ -183,7 +214,7 @@ export function DataTable<TData, TValue>({
               className="max-w-sm"
             />
           )}
-          {!searchKey && (
+          {!hideSearchBar && !searchKey && (
             <Input
               placeholder={searchPlaceholder}
               value={globalFilter ?? ""}
@@ -191,6 +222,7 @@ export function DataTable<TData, TValue>({
               className="max-w-sm"
             />
           )}
+          {extraFilters}
           {categoryFilterKey && (categoryFilterGroups.length > 0 || categoryFilterOptions.length > 0) && (
             <Select
               value={categoryFilterValue}
@@ -324,8 +356,9 @@ export function DataTable<TData, TValue>({
                           className={cn(
                             !isFirstCell && !compact ? "pl-3" : "",
                             compact && "px-2 py-1.5",
+                            isFirstCell && !onSwipeRight && !compact ? "pl-6" : "",
                           )}
-                          style={isFirstCell ? { padding: 0 } : undefined}
+                          style={isFirstCell && onSwipeRight ? { padding: 0 } : undefined}
                         >
                           {isFirstCell && onSwipeRight ? (
                             <div style={{ position: 'relative', overflow: 'hidden' }}>

@@ -1,13 +1,14 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ColumnDef } from '@tanstack/react-table';
-import { ArrowUpDown, Check, ListFilter, Trash2, AlertTriangle } from 'lucide-react';
+import { ArrowUpDown, Check, ListFilter, Trash2, AlertTriangle, Building2, RefreshCw, X, Loader2, Plus, Upload, Link, SlidersHorizontal } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel, SelectSeparator } from '@/components/ui/select';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/ui/responsive-dialog';
@@ -17,6 +18,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTransactions, Transaction } from '@/hooks/useTransactions';
 import { useCategories } from '@/hooks/useCategories';
 import { useRules, Rule } from '@/hooks/useRules';
+import { useBankAccounts, BankAccount } from '@/hooks/useBankAccounts';
+import { useTellerConnect, TellerAuthorization } from '@/hooks/useTellerConnect';
 import { formatCurrency, createTransactionId, parseDate, detectCategoryColumn, scoreCategoryMatch, detectDateColumn, detectAmountColumn, detectDescriptionColumn } from '@/lib/utils';
 import Papa from 'papaparse';
 
@@ -25,7 +28,7 @@ const SELECTED_MONTH_KEY = 'selectedMonth';
 export function Transactions() {
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
-  const { transactions, addTransactions, updateTransaction, saveTransactions, toggleConfirm } = useTransactions(user?.uid || null);
+  const { transactions, addTransactions, updateTransaction, saveTransactions, toggleConfirm, deleteTransactionsByAccount } = useTransactions(user?.uid || null);
   const { categories } = useCategories(user?.uid || null);
   const { rules, addRule, updateRule, deleteRule, findConflict } = useRules(user?.uid || null);
   const [selectedMonth, setSelectedMonth] = useState(() => {
@@ -51,6 +54,56 @@ export function Transactions() {
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
   const [csvPreviewData, setCsvPreviewData] = useState<any[]>([]);
   const [isMobile, setIsMobile] = useState(false);
+  const [mobileSearchValue, setMobileSearchValue] = useState('');
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
+
+  const [syncingAccountId, setSyncingAccountId] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [showAccountsModal, setShowAccountsModal] = useState(false);
+  const [accountToDelete, setAccountToDelete] = useState<BankAccount | null>(null);
+  const [deleteAccountTransactions, setDeleteAccountTransactions] = useState(false);
+
+  const { bankAccounts, loading: bankAccountsLoading, connectAccounts, syncTransactions, removeAccount } = useBankAccounts(user?.uid || null);
+
+  const hasSyncedOnLogin = useRef(false);
+  useEffect(() => {
+    if (bankAccountsLoading || bankAccounts.length === 0 || hasSyncedOnLogin.current) return;
+    hasSyncedOnLogin.current = true;
+    bankAccounts.forEach(async (account) => {
+      try {
+        const newTransactions = await syncTransactions(account);
+        await addTransactions(newTransactions);
+      } catch {
+        // silently skip accounts that fail on auto-sync
+      }
+    });
+  }, [bankAccountsLoading, bankAccounts.length]);
+
+  const handleTellerSuccess = async (authorization: TellerAuthorization) => {
+    try {
+      await connectAccounts(authorization);
+    } catch (err) {
+      setSyncError('Failed to connect bank account. Please try again.');
+    }
+  };
+
+  const { open: openTellerConnect } = useTellerConnect({
+    onSuccess: handleTellerSuccess,
+    onFailure: () => setSyncError('Bank connection failed. Please try again.'),
+  });
+
+  const handleSyncAccount = async (account: Parameters<typeof syncTransactions>[0]) => {
+    setSyncingAccountId(account.id);
+    setSyncError(null);
+    try {
+      const newTransactions = await syncTransactions(account);
+      await addTransactions(newTransactions);
+    } catch (err) {
+      setSyncError(`Failed to sync ${account.name}. Please try again.`);
+    } finally {
+      setSyncingAccountId(null);
+    }
+  };
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 1024); // Tailwind lg breakpoint
@@ -387,6 +440,19 @@ export function Transactions() {
         )
       },
       cell: ({ row }) => {
+        const transaction = row.original;
+        if (isMobile) {
+          return (
+            <div className="min-w-0">
+              <div className="truncate" title={String(row.getValue("Description") || '')}>
+                {row.getValue("Description")}
+              </div>
+              {transaction.Category && (
+                <div className="text-xs text-muted-foreground truncate">{transaction.Category}</div>
+              )}
+            </div>
+          );
+        }
         return (
           <div className="min-w-0 lg:min-w-[200px] truncate" title={String(row.getValue("Description") || '')}>
             {row.getValue("Description")}
@@ -545,11 +611,91 @@ export function Transactions() {
   return (
     <Layout>
       <div className="space-y-6">
-        <div className="sticky top-0 lg:top-0 z-10 h-auto lg:h-16 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 lg:gap-0 bg-background border-b -mx-4 lg:-mx-6 px-4 lg:px-6 py-4 lg:py-0">
+        {/* Hidden file input shared between mobile and desktop */}
+        <Input
+          type="file"
+          accept=".csv"
+          onChange={handleFileUpload}
+          className="hidden"
+          id="csv-upload"
+        />
+
+        {/* Mobile Header */}
+        <div className="lg:hidden sticky top-0 z-10 flex items-center justify-between bg-background border-b -mx-4 px-4 py-3">
           <h1 className="font-medium">Transactions</h1>
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full lg:w-auto">
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon" onClick={() => setShowRulesPanel(true)} className="relative">
+              <ListFilter className="h-4 w-4" />
+              {rules.length > 0 && (
+                <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-primary" />
+              )}
+              <span className="sr-only">Rules</span>
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="icon">
+                  <Plus className="h-4 w-4" />
+                  <span className="sr-only">Add Transactions</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => document.getElementById('csv-upload')?.click()}>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Upload CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => {
+                    bankAccounts.forEach(async (account) => {
+                      try {
+                        const newTransactions = await syncTransactions(account);
+                        await addTransactions(newTransactions);
+                      } catch {
+                        // silently skip
+                      }
+                    });
+                  }}
+                  disabled={bankAccounts.length === 0}
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Sync {bankAccounts.length} {bankAccounts.length === 1 ? 'Account' : 'Accounts'}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setShowAccountsModal(true)}>
+                  <Building2 className="h-4 w-4 mr-2" />
+                  Manage Connected Accounts
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+
+        {/* Mobile Search + Filter Bar */}
+        <div className="lg:hidden flex items-center gap-2">
+          <Input
+            placeholder="Search transactions..."
+            value={mobileSearchValue}
+            onChange={(e) => setMobileSearchValue(e.target.value)}
+            className="flex-1"
+          />
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setShowMobileFilters(true)}
+            className="relative shrink-0"
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+            {(selectedMonth !== 'All Months' || confirmFilter !== 'all') && (
+              <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-primary" />
+            )}
+            <span className="sr-only">Filters</span>
+          </Button>
+        </div>
+
+        {/* Desktop Header */}
+        <div className="hidden lg:flex sticky top-0 z-10 h-16 justify-between items-center bg-background border-b -mx-6 px-6">
+          <h1 className="font-medium">Transactions</h1>
+          <div className="flex items-center gap-4">
             <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-              <SelectTrigger className="w-full sm:w-[180px]">
+              <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="Select month" />
               </SelectTrigger>
               <SelectContent>
@@ -558,27 +704,10 @@ export function Transactions() {
                 ))}
               </SelectContent>
             </Select>
-            <Select value={confirmFilter} onValueChange={(v) => setConfirmFilter(v as 'all' | 'unconfirmed' | 'confirmed')}>
-              <SelectTrigger className="w-full sm:w-[160px]">
-                <SelectValue placeholder="Filter by status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Transactions</SelectItem>
-                <SelectItem value="unconfirmed">Unconfirmed</SelectItem>
-                <SelectItem value="confirmed">Confirmed</SelectItem>
-              </SelectContent>
-            </Select>
-            <Input
-              type="file"
-              accept=".csv"
-              onChange={handleFileUpload}
-              className="hidden"
-              id="csv-upload"
-            />
             <Button
               variant="outline"
               onClick={() => setShowRulesPanel(true)}
-              className="w-full sm:w-auto flex items-center gap-2"
+              className="flex items-center gap-2"
             >
               <ListFilter className="h-4 w-4" />
               Rules
@@ -588,11 +717,40 @@ export function Transactions() {
                 </Badge>
               )}
             </Button>
-            <Button asChild className="w-full sm:w-auto">
-              <label htmlFor="csv-upload" className="cursor-pointer">
-                Upload Transactions
-              </label>
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button className="flex items-center gap-2">
+                  <Plus className="h-4 w-4" />
+                  Add Transactions
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => document.getElementById('csv-upload')?.click()}>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Upload CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => {
+                    bankAccounts.forEach(async (account) => {
+                      try {
+                        const newTransactions = await syncTransactions(account);
+                        await addTransactions(newTransactions);
+                      } catch {
+                        // silently skip
+                      }
+                    });
+                  }}
+                  disabled={bankAccounts.length === 0}
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Sync {bankAccounts.length} {bankAccounts.length === 1 ? 'Account' : 'Accounts'}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setShowAccountsModal(true)}>
+                  <Building2 className="h-4 w-4 mr-2" />
+                  Manage Connected Accounts
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 
@@ -610,6 +768,21 @@ export function Transactions() {
             categoryFilterGroups={categoryGroups}
             categoryFilterPlaceholder="Filter by category"
             initialCategoryFilter={categoryFilterFromUrl}
+            hideSearchBar={isMobile}
+            externalGlobalFilter={isMobile ? mobileSearchValue : undefined}
+
+            extraFilters={isMobile ? undefined : (
+              <Select value={confirmFilter} onValueChange={(v) => setConfirmFilter(v as 'all' | 'unconfirmed' | 'confirmed')}>
+                <SelectTrigger className="w-[160px]">
+                  <SelectValue placeholder="Filter by status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Transactions</SelectItem>
+                  <SelectItem value="unconfirmed">Unconfirmed</SelectItem>
+                  <SelectItem value="confirmed">Confirmed</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
             forceHiddenColumnIds={isMobile ? ['select', 'Category', 'confirmed', 'Date'] : undefined}
             compact={isMobile}
             columnOrder={isMobile ? ['Description', 'Amount', 'select', 'Category', 'confirmed', 'Date'] : undefined}
@@ -644,8 +817,8 @@ export function Transactions() {
             <CardContent className="space-y-4">
               <div>
                 <div className="text-sm text-muted-foreground">
-                  {new Date(2000 + parseInt(selectedTransaction.Date.split('/')[2]), 
-                    parseInt(selectedTransaction.Date.split('/')[0]) - 1, 
+                  {new Date(2000 + parseInt(selectedTransaction.Date.split('/')[2]),
+                    parseInt(selectedTransaction.Date.split('/')[0]) - 1,
                     parseInt(selectedTransaction.Date.split('/')[1])).toLocaleDateString('en-US', {
                       month: 'short',
                       day: 'numeric',
@@ -655,6 +828,15 @@ export function Transactions() {
                 <div className="text-2xl font-bold">
                   {formatCurrency(parseFloat(String(selectedTransaction.Amount)))}
                 </div>
+                {selectedTransaction.bankAccountId && (() => {
+                  const account = bankAccounts.find(a => a.id === selectedTransaction.bankAccountId);
+                  return account ? (
+                    <div className="flex items-center gap-1.5 text-sm text-muted-foreground mt-1">
+                      <Building2 className="h-3.5 w-3.5 shrink-0" />
+                      <span>{account.institutionName} · {account.name}</span>
+                    </div>
+                  ) : null;
+                })()}
               </div>
 
               <div className="space-y-2">
@@ -758,8 +940,8 @@ export function Transactions() {
                 <div className="space-y-4 mt-4 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
                   <div>
                     <div className="text-sm text-muted-foreground">
-                      {new Date(2000 + parseInt(selectedTransaction.Date.split('/')[2]), 
-                        parseInt(selectedTransaction.Date.split('/')[0]) - 1, 
+                      {new Date(2000 + parseInt(selectedTransaction.Date.split('/')[2]),
+                        parseInt(selectedTransaction.Date.split('/')[0]) - 1,
                         parseInt(selectedTransaction.Date.split('/')[1])).toLocaleDateString('en-US', {
                           month: 'short',
                           day: 'numeric',
@@ -769,6 +951,15 @@ export function Transactions() {
                     <div className="text-2xl font-bold">
                       {formatCurrency(parseFloat(String(selectedTransaction.Amount)))}
                     </div>
+                    {selectedTransaction.bankAccountId && (() => {
+                      const account = bankAccounts.find(a => a.id === selectedTransaction.bankAccountId);
+                      return account ? (
+                        <div className="flex items-center gap-1.5 text-sm text-muted-foreground mt-1">
+                          <Building2 className="h-3.5 w-3.5 shrink-0" />
+                          <span>{account.institutionName} · {account.name}</span>
+                        </div>
+                      ) : null;
+                    })()}
                   </div>
 
                   <div className="space-y-2">
@@ -887,6 +1078,55 @@ export function Transactions() {
                     </Button>
                   </div>
                 ))
+              )}
+            </div>
+          </SheetContent>
+        </Sheet>
+
+        {/* Mobile Filters Sheet */}
+        <Sheet open={showMobileFilters} onOpenChange={setShowMobileFilters}>
+          <SheetContent side="bottom" className="lg:hidden rounded-t-lg">
+            <SheetHeader>
+              <SheetTitle>Filters</SheetTitle>
+            </SheetHeader>
+            <div className="space-y-4 mt-4 pb-4">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Month</label>
+                <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select month" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {months.map(month => (
+                      <SelectItem key={month} value={month}>{month}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Status</label>
+                <Select value={confirmFilter} onValueChange={(v) => setConfirmFilter(v as 'all' | 'unconfirmed' | 'confirmed')}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Filter by status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Transactions</SelectItem>
+                    <SelectItem value="unconfirmed">Unconfirmed</SelectItem>
+                    <SelectItem value="confirmed">Confirmed</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {(selectedMonth !== 'All Months' || confirmFilter !== 'all') && (
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    setSelectedMonth('All Months');
+                    setConfirmFilter('all');
+                  }}
+                >
+                  Clear Filters
+                </Button>
               )}
             </div>
           </SheetContent>
@@ -1109,6 +1349,140 @@ export function Transactions() {
                 Cancel
               </Button>
               <Button onClick={handleSaveMapping}>Import Transactions</Button>
+            </DialogFooter>
+          </ResponsiveDialogContent>
+        </ResponsiveDialog>
+
+        {/* Connected Accounts Modal */}
+        <ResponsiveDialog open={showAccountsModal} onOpenChange={setShowAccountsModal}>
+          <ResponsiveDialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Building2 className="h-4 w-4" />
+                Connected Accounts
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 py-2">
+              {syncError && (
+                <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  <span className="flex-1">{syncError}</span>
+                  <button onClick={() => setSyncError(null)} className="shrink-0">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
+              {bankAccounts.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  No accounts connected yet.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {bankAccounts.map((account) => (
+                    <div
+                      key={account.id}
+                      className="flex items-center justify-between rounded-md border px-4 py-3"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium">{account.institutionName}</p>
+                        <p className="text-xs text-muted-foreground capitalize">
+                          {account.name} · {account.subtype}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {account.lastSyncAt
+                            ? `Last synced ${new Date(account.lastSyncAt).toLocaleString()}`
+                            : 'Never synced'}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 ml-4 shrink-0">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleSyncAccount(account)}
+                          disabled={syncingAccountId === account.id}
+                        >
+                          {syncingAccountId === account.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <RefreshCw className="h-3.5 w-3.5" />
+                          )}
+                          <span className="ml-1.5">Sync</span>
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-muted-foreground hover:text-destructive h-8 w-8 p-0"
+                          onClick={() => {
+                            setAccountToDelete(account);
+                            setDeleteAccountTransactions(false);
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button onClick={openTellerConnect} variant="outline" className="w-full sm:w-auto">
+                <Link className="h-4 w-4 mr-2" />
+                Connect More Accounts
+              </Button>
+            </DialogFooter>
+          </ResponsiveDialogContent>
+        </ResponsiveDialog>
+
+        {/* Delete Account Confirmation Modal */}
+        <ResponsiveDialog
+          open={!!accountToDelete}
+          onOpenChange={(open) => { if (!open) setAccountToDelete(null); }}
+        >
+          <ResponsiveDialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-destructive">
+                <AlertTriangle className="h-4 w-4" />
+                Remove Account
+              </DialogTitle>
+              <DialogDescription>
+                Remove <strong>{accountToDelete?.institutionName}</strong> ({accountToDelete?.name})?
+                This will disconnect it from syncing.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-2">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <Checkbox
+                  id="delete-transactions"
+                  checked={deleteAccountTransactions}
+                  onCheckedChange={(checked) => setDeleteAccountTransactions(!!checked)}
+                  className="mt-0.5"
+                />
+                <div>
+                  <p className="text-sm font-medium">Also delete synced transactions</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Remove all transactions imported from this account
+                  </p>
+                </div>
+              </label>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setAccountToDelete(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={async () => {
+                  if (!accountToDelete) return;
+                  if (deleteAccountTransactions) {
+                    await deleteTransactionsByAccount(accountToDelete.id);
+                  }
+                  await removeAccount(accountToDelete.id);
+                  setAccountToDelete(null);
+                }}
+              >
+                Remove Account
+              </Button>
             </DialogFooter>
           </ResponsiveDialogContent>
         </ResponsiveDialog>
