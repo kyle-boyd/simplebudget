@@ -123,6 +123,7 @@ export function useBankAccounts(userId: string | null) {
           Date: date,
           Amount: amount,
           Description: t.description,
+          Category: t.details?.category || undefined,
           confirmed: false,
           bankAccountId: account.id,
         };

@@ -8,11 +8,13 @@ import {
   deleteUser,
 } from 'firebase/auth';
 import { ref, remove } from 'firebase/database';
+import { Building2, RefreshCw, Loader2, Link, Trash2, AlertTriangle, X } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Select,
   SelectContent,
@@ -30,6 +32,9 @@ import {
 } from '@/components/ui/dialog';
 import { useAuth } from '@/hooks/useAuth';
 import { useUserSettings } from '@/hooks/useUserSettings';
+import { useTransactions } from '@/hooks/useTransactions';
+import { useBankAccounts, BankAccount } from '@/hooks/useBankAccounts';
+import { useTellerConnect, TellerAuthorization } from '@/hooks/useTellerConnect';
 import { db } from '@/lib/firebase';
 
 const CURRENCY_OPTIONS = [
@@ -94,6 +99,40 @@ export function Settings() {
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [passwordMsg, setPasswordMsg] = useState('');
   const [passwordError, setPasswordError] = useState(false);
+
+  // Bank accounts
+  const { addTransactions, deleteTransactionsByAccount } = useTransactions(user?.uid ?? null);
+  const { bankAccounts, connectAccounts, syncTransactions, removeAccount } = useBankAccounts(user?.uid ?? null);
+  const [syncingAccountId, setSyncingAccountId] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [accountToDelete, setAccountToDelete] = useState<BankAccount | null>(null);
+  const [deleteAccountTransactions, setDeleteAccountTransactions] = useState(false);
+
+  const handleTellerSuccess = async (authorization: TellerAuthorization) => {
+    try {
+      await connectAccounts(authorization);
+    } catch {
+      setSyncError('Failed to connect bank account. Please try again.');
+    }
+  };
+
+  const { open: openTellerConnect } = useTellerConnect({
+    onSuccess: handleTellerSuccess,
+    onFailure: () => setSyncError('Bank connection failed. Please try again.'),
+  });
+
+  const handleSyncAccount = async (account: BankAccount) => {
+    setSyncingAccountId(account.id);
+    setSyncError(null);
+    try {
+      const newTransactions = await syncTransactions(account);
+      await addTransactions(newTransactions);
+    } catch {
+      setSyncError(`Failed to sync ${account.name}. Please try again.`);
+    } finally {
+      setSyncingAccountId(null);
+    }
+  };
 
   // Delete account
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -241,6 +280,82 @@ export function Settings() {
           <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
           <p className="text-muted-foreground">Manage your preferences and account.</p>
         </div>
+
+        {/* Account Connections */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Building2 className="h-4 w-4" />
+              Account Connections
+            </CardTitle>
+            <CardDescription>Manage your connected bank accounts.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {syncError && (
+              <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                <span className="flex-1">{syncError}</span>
+                <button onClick={() => setSyncError(null)} className="shrink-0">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+            {bankAccounts.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-2">No accounts connected yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {bankAccounts.map((account) => (
+                  <div
+                    key={account.id}
+                    className="flex items-center justify-between rounded-md border px-4 py-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium">{account.institutionName}</p>
+                      <p className="text-xs text-muted-foreground capitalize">
+                        {account.name} · {account.subtype}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {account.lastSyncAt
+                          ? `Last synced ${new Date(account.lastSyncAt).toLocaleString()}`
+                          : 'Never synced'}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 ml-4 shrink-0">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleSyncAccount(account)}
+                        disabled={syncingAccountId === account.id}
+                      >
+                        {syncingAccountId === account.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-3.5 w-3.5" />
+                        )}
+                        <span className="ml-1.5">Sync</span>
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-muted-foreground hover:text-destructive h-8 w-8 p-0"
+                        onClick={() => {
+                          setAccountToDelete(account);
+                          setDeleteAccountTransactions(false);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <Button onClick={openTellerConnect} variant="outline">
+              <Link className="h-4 w-4 mr-2" />
+              Connect Account
+            </Button>
+          </CardContent>
+        </Card>
 
         {/* Preferences */}
         <Card>
@@ -395,6 +510,56 @@ export function Settings() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Remove Bank Account Dialog */}
+      <Dialog open={!!accountToDelete} onOpenChange={(open) => { if (!open) setAccountToDelete(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-4 w-4" />
+              Remove Account
+            </DialogTitle>
+            <DialogDescription>
+              Remove <strong>{accountToDelete?.institutionName}</strong> ({accountToDelete?.name})?
+              This will disconnect it from syncing.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <Checkbox
+                id="delete-account-transactions"
+                checked={deleteAccountTransactions}
+                onCheckedChange={(checked) => setDeleteAccountTransactions(!!checked)}
+                className="mt-0.5"
+              />
+              <div>
+                <p className="text-sm font-medium">Also delete synced transactions</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Remove all transactions imported from this account
+                </p>
+              </div>
+            </label>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAccountToDelete(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={async () => {
+                if (!accountToDelete) return;
+                if (deleteAccountTransactions) {
+                  await deleteTransactionsByAccount(accountToDelete.id);
+                }
+                await removeAccount(accountToDelete.id);
+                setAccountToDelete(null);
+              }}
+            >
+              Remove Account
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent>

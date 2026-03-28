@@ -442,6 +442,7 @@ export function Transactions() {
       cell: ({ row }) => {
         const transaction = row.original;
         if (isMobile) {
+          const account = transaction.bankAccountId ? bankAccounts.find(a => a.id === transaction.bankAccountId) : null;
           return (
             <div className="min-w-0">
               <div className="truncate" title={String(row.getValue("Description") || '')}>
@@ -449,6 +450,9 @@ export function Transactions() {
               </div>
               {transaction.Category && (
                 <div className="text-xs text-muted-foreground truncate">{transaction.Category}</div>
+              )}
+              {account && (
+                <div className="text-xs text-muted-foreground truncate">{account.institutionName} · {account.name}</div>
               )}
             </div>
           );
@@ -458,6 +462,22 @@ export function Transactions() {
             {row.getValue("Description")}
           </div>
         )
+      },
+    },
+    {
+      id: "account",
+      header: "Account",
+      cell: ({ row }) => {
+        const transaction = row.original;
+        if (!transaction.bankAccountId) return null;
+        const account = bankAccounts.find(a => a.id === transaction.bankAccountId);
+        if (!account) return null;
+        return (
+          <div className="text-sm text-muted-foreground whitespace-nowrap">
+            <span className="font-medium text-foreground">{account.name}</span>
+            <span className="ml-1">{account.institutionName}</span>
+          </div>
+        );
       },
     },
     {
@@ -604,7 +624,7 @@ export function Transactions() {
         )
       },
     },
-  ], [categories, categoryOptions, handleCategoryChange, toggleConfirm, isMobile]);
+  ], [categories, categoryOptions, handleCategoryChange, toggleConfirm, isMobile, bankAccounts]);
 
   const isMobileSheetOpen = isMobile && isEditPanelOpen && !!selectedTransaction;
 
