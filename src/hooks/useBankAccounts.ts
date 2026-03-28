@@ -18,9 +18,13 @@ export interface BankAccount {
 
 const TELLER_API = '/teller-api';
 
-function tellerHeaders(tellerAccessToken: string): Record<string, string> {
+async function tellerHeaders(tellerAccessToken: string): Promise<Record<string, string>> {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Not authenticated');
+  const idToken = await user.getIdToken();
   return {
-    Authorization: `Basic ${btoa(tellerAccessToken + ':')}`,
+    Authorization: `Bearer ${idToken}`,
+    'x-teller-token': tellerAccessToken,
   };
 }
 
@@ -74,7 +78,7 @@ export function useBankAccounts(userId: string | null) {
     if (!userId) return;
 
     const response = await fetch(`${TELLER_API}/accounts`, {
-      headers: tellerHeaders(authorization.accessToken),
+      headers: await tellerHeaders(authorization.accessToken),
     });
 
     if (!response.ok) {
@@ -100,7 +104,7 @@ export function useBankAccounts(userId: string | null) {
 
   const syncTransactions = async (account: BankAccount): Promise<Transaction[]> => {
     const response = await fetch(`${TELLER_API}/accounts/${account.id}/transactions`, {
-      headers: tellerHeaders(account.accessToken),
+      headers: await tellerHeaders(account.accessToken),
     });
 
     if (!response.ok) {

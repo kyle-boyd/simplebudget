@@ -3,7 +3,7 @@
   "private": true,
   "main": "lib/index.js",
   "engines": {
-    "node": "18"
+    "node": "22"
   },
   "scripts": {
     "build": "tsc",
@@ -14,7 +14,7 @@
     "firebase-functions": "^6.0.0"
   },
   "devDependencies": {
-    "@types/node": "^18.0.0",
+    "@types/node": "^22.0.0",
     "typescript": "^5.3.3"
   }
 }

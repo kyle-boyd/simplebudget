@@ -21,6 +21,16 @@ export default defineConfig({
         target: 'https://api.teller.io',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/teller-api/, ''),
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq, req) => {
+            const tellerToken = req.headers['x-teller-token'] as string;
+            proxyReq.removeHeader('authorization');
+            proxyReq.removeHeader('x-teller-token');
+            if (tellerToken) {
+              proxyReq.setHeader('Authorization', 'Basic ' + Buffer.from(tellerToken + ':').toString('base64'));
+            }
+          });
+        },
       },
     },
   },
