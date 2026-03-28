@@ -64,7 +64,7 @@ function tellerRequest(path, headers, cert, key) {
 }
 // Proxies /teller-api/* → https://api.teller.io/*
 // Requires a valid Firebase ID token in Authorization header and Teller token in x-teller-token header.
-exports.tellerProxy = (0, https_1.onRequest)({ secrets: [tellerCert, tellerKey] }, async (req, res) => {
+exports.tellerProxy = (0, https_1.onRequest)({ secrets: [tellerCert, tellerKey], invoker: 'public' }, async (req, res) => {
     const authHeader = req.headers.authorization || '';
     const idToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
     if (!idToken) {
