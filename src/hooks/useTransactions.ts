@@ -11,6 +11,7 @@ export interface Transaction {
   Category?: string;
   confirmed?: boolean;
   hasRule?: boolean;
+  bankAccountId?: string;
 }
 
 export function useTransactions(userId: string | null) {
@@ -73,6 +74,10 @@ export function useTransactions(userId: string | null) {
     }
   };
 
+  const deleteTransactionsByAccount = async (accountId: string) => {
+    await saveTransactions(transactions.filter(t => t.bankAccountId !== accountId));
+  };
+
   return {
     transactions,
     loading,
@@ -80,6 +85,7 @@ export function useTransactions(userId: string | null) {
     addTransactions,
     updateTransaction,
     toggleConfirm,
+    deleteTransactionsByAccount,
   };
 }
 

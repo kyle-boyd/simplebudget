@@ -7,7 +7,7 @@ import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis } from 'recharts';
 import { useAuth } from '@/hooks/useAuth';
 import { useTransactions } from '@/hooks/useTransactions';
 import { useCategories } from '@/hooks/useCategories';
-import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { TrendingUp, TrendingDown, Minus, ChevronLeft } from 'lucide-react';
 
 const SELECTED_MONTH_KEY = 'selectedMonth';
 
@@ -19,6 +19,7 @@ export function Dashboard() {
     // Initialize from localStorage if available
     return localStorage.getItem(SELECTED_MONTH_KEY) || 'All Months';
   });
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
   // Save to localStorage whenever selectedMonth changes
   useEffect(() => {
@@ -341,6 +342,44 @@ export function Dashboard() {
     });
   })();
 
+  // Subcategory spending data (when a main category is selected)
+  const subSpendingData = (() => {
+    if (!selectedCategory) return [];
+
+    const category = categories.find(cat => cat.name === selectedCategory);
+    if (!category || category.subcategories.length === 0) return [];
+
+    const subBudgets: Record<string, number> = {};
+    const subTotals: Record<string, number> = {};
+    category.subcategories.forEach(sub => {
+      subBudgets[sub.name] = sub.amount || 0;
+      subTotals[sub.name] = 0;
+    });
+
+    filteredTransactions.forEach(transaction => {
+      const transactionCategory = transaction.Category?.trim();
+      if (!transactionCategory) return;
+      if (category.subcategories.some(sub => sub.name.trim() === transactionCategory)) {
+        subTotals[transactionCategory] = (subTotals[transactionCategory] || 0) + Math.abs(transaction.Amount);
+      }
+    });
+
+    return Object.entries(subTotals)
+      .sort(([, a], [, b]) => b - a)
+      .map(([subCategory]) => {
+        const spent = subTotals[subCategory];
+        const budgeted = subBudgets[subCategory] || 0;
+
+        if (spent <= budgeted) {
+          return { category: subCategory, spent, budgeted, spentBase: spent, remainingBudgeted: budgeted - spent, budgetedBase: 0, overage: 0 };
+        } else {
+          return { category: subCategory, spent, budgeted, spentBase: 0, remainingBudgeted: 0, budgetedBase: budgeted, overage: spent - budgeted };
+        }
+      });
+  })();
+
+  const displaySpendingData = selectedCategory ? subSpendingData : mainSpendingData;
+
   // Status chart data
   const statusData = (() => {
     const budgetCategoryNames = new Set<string>();
@@ -511,32 +550,32 @@ export function Dashboard() {
                       dataKey="spentBase" 
                       stackId="budget" 
                       fill="hsl(220, 13%, 18%)"
-                      radius={[0, 0, 12, 12]}
+                      radius={[0, 0, 4, 4]}
                       legendType="none"
                     />
-                    <Bar 
-                      dataKey="remainingBudgeted" 
-                      stackId="budget" 
+                    <Bar
+                      dataKey="remainingBudgeted"
+                      stackId="budget"
                       fill="#f5f5f5"
                       stroke="#d1d1d1"
                       strokeWidth={1}
-                      radius={[12, 12, 0, 0]}
+                      radius={[4, 4, 0, 0]}
                       legendType="none"
                     />
-                    <Bar 
-                      dataKey="budgetedBase" 
-                      stackId="budget" 
+                    <Bar
+                      dataKey="budgetedBase"
+                      stackId="budget"
                       fill="hsl(0, 70%, 85%)"
                       stroke="#d1d1d1"
                       strokeWidth={1}
-                      radius={[0, 0, 12, 12]}
+                      radius={[0, 0, 4, 4]}
                       legendType="none"
                     />
-                    <Bar 
-                      dataKey="overage" 
-                      stackId="budget" 
+                    <Bar
+                      dataKey="overage"
+                      stackId="budget"
                       fill="hsl(0, 84%, 60%)"
-                      radius={[12, 12, 0, 0]}
+                      radius={[4, 4, 0, 0]}
                       legendType="none"
                     />
                   </BarChart>
@@ -572,15 +611,15 @@ export function Dashboard() {
               <CardContent className="flex-1 lg:min-h-0 overflow-hidden">
                 <div className="relative h-[250px] lg:h-full w-full">
                   <ChartContainer config={chartConfig} className="h-full w-full">
-                    <PieChart>
+                    <PieChart margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
                       <Pie
                         data={statusData}
                         dataKey="value"
                         nameKey="name"
                         cx="50%"
                         cy="50%"
-                        innerRadius={70}
-                        outerRadius={100}
+                        innerRadius={65}
+                        outerRadius={90}
                       >
                         {statusData.map((entry, index) => {
                           let fillColor;
@@ -636,15 +675,41 @@ export function Dashboard() {
 
           <Card className="flex flex-col lg:flex-1 lg:min-h-0 shadow-none overflow-hidden">
             <CardHeader className="flex-shrink-0">
-              <CardTitle>Monthly Spending by Main Category</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                {selectedCategory && (
+                  <button
+                    onClick={() => setSelectedCategory(null)}
+                    className="inline-flex items-center text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </button>
+                )}
+                Monthly Spending by Category
+                {selectedCategory && (
+                  <span className="text-muted-foreground font-normal">
+                    &rsaquo; {selectedCategory}
+                  </span>
+                )}
+              </CardTitle>
               <CardDescription>{getDateRange(filteredTransactions)}</CardDescription>
             </CardHeader>
             <CardContent className="flex-1 lg:min-h-0 overflow-hidden">
               <ChartContainer config={chartConfig} className="h-[300px] lg:h-full w-full">
                 <BarChart
-                  data={mainSpendingData}
+                  data={displaySpendingData}
                   layout="vertical"
                   barSize={40}
+                  onClick={(data) => {
+                    if (selectedCategory) return;
+                    if (data?.activePayload?.[0]?.payload) {
+                      const { category } = data.activePayload[0].payload;
+                      const cat = categories.find(c => c.name === category);
+                      if (cat && cat.subcategories.length > 0) {
+                        setSelectedCategory(category);
+                      }
+                    }
+                  }}
+                  style={{ cursor: selectedCategory ? 'default' : 'pointer' }}
                 >
                   <XAxis type="number" hide />
                   <YAxis 
@@ -665,6 +730,7 @@ export function Dashboard() {
                       return (
                         <div className="rounded-lg border bg-background p-2 shadow-sm">
                           <div className="grid gap-2">
+                            <span className="text-sm font-semibold">{data.category}</span>
                             <div className="flex items-center justify-between gap-4">
                               <div className="flex items-center gap-2">
                                 <div className="w-3 h-3 rounded" style={{ backgroundColor: '#f5f5f5', border: '1px solid #d1d1d1' }} />
@@ -696,22 +762,22 @@ export function Dashboard() {
                     fill="#f5f5f5"
                     stroke="#d1d1d1"
                     strokeWidth={1}
-                    radius={[0, 12, 12, 0]}
+                    radius={[0, 4, 4, 0]}
                     legendType="none"
                   />
-                  <Bar 
-                    dataKey="budgetedBase" 
-                    stackId="budget" 
+                  <Bar
+                    dataKey="budgetedBase"
+                    stackId="budget"
                     fill="hsl(0, 70%, 85%)"
                     stroke="#d1d1d1"
                     strokeWidth={1}
                     legendType="none"
                   />
-                  <Bar 
-                    dataKey="overage" 
-                    stackId="budget" 
+                  <Bar
+                    dataKey="overage"
+                    stackId="budget"
                     fill="hsl(0, 84%, 60%)"
-                    radius={[0, 12, 12, 0]}
+                    radius={[0, 4, 4, 0]}
                     legendType="none"
                   />
                 </BarChart>

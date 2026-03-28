@@ -17,6 +17,11 @@ export default defineConfig({
         target: 'http://localhost:5000',
         changeOrigin: true,
       },
+      '/teller-api': {
+        target: 'https://api.teller.io',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/teller-api/, ''),
+      },
     },
   },
   build: {

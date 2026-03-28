@@ -448,8 +448,8 @@ export function Budget() {
                           </Button>
                         )}
                       </div>
-                      <div className="flex items-center gap-4 lg:gap-16">
-                        <div className="text-right">
+                      <div className="flex items-center gap-3 lg:gap-16">
+                        <div className="text-right w-[80px] lg:w-[120px]">
                           <div className="text-sm text-muted-foreground">Budget</div>
                           {hasSubcategories ? (
                             <div className="font-semibold">{formatCurrency(totalAmount)}</div>
@@ -489,13 +489,13 @@ export function Budget() {
                             />
                           )}
                         </div>
-                        <div className="text-right">
+                        <div className="text-right min-w-[60px] lg:min-w-[100px]">
                           <div className="text-sm text-muted-foreground">Spent</div>
                           <div className={`font-semibold ${isOverBudget ? 'text-destructive' : 'text-green-600'}`}>
                             {formatCurrency(categorySpending)}
                           </div>
                         </div>
-                        {!category.isSystem && (
+                        {!category.isSystem ? (
                           <Button
                             variant="ghost"
                             size="sm"
@@ -505,6 +505,8 @@ export function Budget() {
                           >
                             <Plus className="h-4 w-4" />
                           </Button>
+                        ) : (
+                          <div className="h-8 w-8" />
                         )}
                       </div>
                     </div>
@@ -614,7 +616,7 @@ export function Budget() {
                                   {formatCurrency(spending)}
                                 </div>
                               </div>
-                              {!sub.isSystem && (
+                              {!sub.isSystem ? (
                                 <div className="relative flex items-center">
                                   {deletingSubcategoryId === sub.id ? (
                                     <div className="delete-confirmation-popover absolute right-full mr-2 bg-popover border rounded-md shadow-lg p-3 flex items-center gap-3 whitespace-nowrap z-10">
@@ -644,12 +646,14 @@ export function Budget() {
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => setDeletingSubcategoryId(sub.id)}
-                                    className="h-6 w-6 p-0 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity text-primary hover:text-primary"
+                                    className="h-8 w-8 p-0 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity text-primary hover:text-primary"
                                     title="Delete subcategory"
                                   >
-                                    <Trash2 className="h-3.5 w-3.5" />
+                                    <Trash2 className="h-4 w-4" />
                                   </Button>
                                 </div>
+                              ) : (
+                                <div className="h-8 w-8" />
                               )}
                             </div>
                           </div>
@@ -662,18 +666,107 @@ export function Budget() {
 
           {systemCategory && (
             <Card className="shadow-none">
-              <CardContent className="px-6 lg:px-8 py-4">
-                <div className="space-y-2">
-                  <div className="border-b">
-                    <span className="font-semibold">{systemCategory.name}</span>
-                  </div>
-                  {(systemCategory.subcategories || []).map((sub) => (
-                    <div key={sub.id} className="flex items-center justify-between py-1 border-b">
-                      <span>{sub.name}</span>
+              <CardContent className="p-0">
+                <div className="space-y-4">
+                  {/* System Category Header */}
+                  <div className="border-b py-2">
+                    <div className="flex items-center justify-between gap-2 px-6 lg:px-8 min-h-[41px]">
+                      <span className="font-semibold">{systemCategory.name}</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleAddSubcategory(systemCategory.id)}
+                        className="h-6 w-6 p-0"
+                        title="Add Subcategory"
+                      >
+                        <Plus className="h-4 w-4" />
+                      </Button>
                     </div>
-                  ))}
+                  </div>
                 </div>
               </CardContent>
+
+              {/* System Subcategories */}
+              <div>
+                {(systemCategory.subcategories || []).map((sub, index) => {
+                  const isEditingName = editingNames[sub.id] !== undefined || !sub.name;
+                  const displayName = isEditingName ? (editingNames[sub.id] ?? '') : sub.name;
+                  const isLast = index === (systemCategory.subcategories || []).length - 1;
+
+                  return (
+                    <div key={sub.id} className={`flex items-center justify-between gap-2 min-h-[40px] group ${!isLast ? 'border-b' : ''} px-6 lg:px-8`}>
+                      <div className="flex items-center gap-2 flex-1">
+                        {isEditingName ? (
+                          <Input
+                            type="text"
+                            value={displayName}
+                            onChange={(e) => handleNameChange(sub.id, systemCategory.id, e.target.value)}
+                            onBlur={() => handleNameBlur(sub.id, systemCategory.id)}
+                            onKeyDown={(e) => handleNameKeyDown(e, sub.id, systemCategory.id)}
+                            className="h-8 flex-1 max-w-[200px]"
+                            autoFocus
+                            placeholder="Subcategory name"
+                          />
+                        ) : (
+                          <>
+                            <span>{sub.name || 'New Subcategory'}</span>
+                            {!sub.isSystem && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEditSubcategory(sub, systemCategory.id);
+                                }}
+                                className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                      {!sub.isSystem && (
+                        <div className="relative flex items-center">
+                          {deletingSubcategoryId === sub.id ? (
+                            <div className="delete-confirmation-popover absolute right-full mr-2 bg-popover border rounded-md shadow-lg p-3 flex items-center gap-3 whitespace-nowrap z-10">
+                              <span className="text-sm">Are you sure?</span>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setDeletingSubcategoryId(null)}
+                                className="h-8 px-3 text-sm"
+                              >
+                                Cancel
+                              </Button>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => {
+                                  deleteSubcategory(systemCategory.id, sub.id);
+                                  setDeletingSubcategoryId(null);
+                                }}
+                                className="h-8 px-3 text-sm"
+                              >
+                                Delete
+                              </Button>
+                            </div>
+                          ) : null}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setDeletingSubcategoryId(sub.id)}
+                            className="h-6 w-6 p-0 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity text-primary hover:text-primary"
+                            title="Delete subcategory"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </Card>
           )}
         </div>
