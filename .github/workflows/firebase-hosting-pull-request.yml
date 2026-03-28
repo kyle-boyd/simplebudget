@@ -23,6 +23,8 @@ jobs:
           VITE_FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
           VITE_FIREBASE_MEASUREMENT_ID: ${{ secrets.FIREBASE_MEASUREMENT_ID }}
           VITE_FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
+          VITE_TELLER_APP_ID: ${{ secrets.VITE_TELLER_APP_ID }}
+          VITE_TELLER_ENVIRONMENT: ${{ secrets.VITE_TELLER_ENVIRONMENT }}
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
