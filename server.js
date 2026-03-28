@@ -5,8 +5,8 @@ const cors = require('cors');
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// Enable CORS for all routes
-app.use(cors());
+// Restrict CORS to localhost origins only (this server is for local dev/preview)
+app.use(cors({ origin: /^http:\/\/localhost(:\d+)?$/ }));
 
 // Serve static files from the public directory
 app.use(express.static(path.join(__dirname, 'public')));

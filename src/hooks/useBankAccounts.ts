@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ref, onValue, set, update } from 'firebase/database';
-import { db } from '@/lib/firebase';
+import { db, auth } from '@/lib/firebase';
 import { Transaction } from './useTransactions';
 import { createTransactionId, parseDate } from '@/lib/utils';
 import { TellerAuthorization } from './useTellerConnect';
@@ -18,8 +18,14 @@ export interface BankAccount {
 
 const TELLER_API = '/teller-api';
 
-function authHeader(accessToken: string): string {
-  return 'Basic ' + btoa(accessToken + ':');
+async function tellerHeaders(tellerAccessToken: string): Promise<Record<string, string>> {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Not authenticated');
+  const idToken = await user.getIdToken();
+  return {
+    Authorization: `Bearer ${idToken}`,
+    'x-teller-token': tellerAccessToken,
+  };
 }
 
 interface TellerAccount {
@@ -72,7 +78,7 @@ export function useBankAccounts(userId: string | null) {
     if (!userId) return;
 
     const response = await fetch(`${TELLER_API}/accounts`, {
-      headers: { Authorization: authHeader(authorization.accessToken) },
+      headers: await tellerHeaders(authorization.accessToken),
     });
 
     if (!response.ok) {
@@ -98,7 +104,7 @@ export function useBankAccounts(userId: string | null) {
 
   const syncTransactions = async (account: BankAccount): Promise<Transaction[]> => {
     const response = await fetch(`${TELLER_API}/accounts/${account.id}/transactions`, {
-      headers: { Authorization: authHeader(account.accessToken) },
+      headers: await tellerHeaders(account.accessToken),
     });
 
     if (!response.ok) {

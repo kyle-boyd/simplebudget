@@ -34,7 +34,7 @@ export function Layout({ children }: LayoutProps) {
       </div>
 
       {/* Main Content */}
-      <main className="flex-1 px-4 lg:px-6 pb-6 pt-16 lg:pt-0 overflow-auto">
+      <main className="flex-1 px-4 lg:px-6 pb-6 pt-16 lg:pt-0 overflow-y-auto overflow-x-hidden">
         {children}
       </main>
     </div>
