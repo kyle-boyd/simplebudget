@@ -99,7 +99,6 @@ export function Transactions() {
       const newTransactions = await syncTransactions(account);
       await addTransactions(newTransactions);
     } catch (err) {
-      console.error('Sync error:', err);
       setSyncError(`Failed to sync ${account.name}. Please try again.`);
     } finally {
       setSyncingAccountId(null);
