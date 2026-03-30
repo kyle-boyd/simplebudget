@@ -53,11 +53,15 @@ export function useTransactions(userId: string | null) {
   };
 
   const addTransactions = async (newTransactions: Transaction[]) => {
-    const existingIds = new Set(transactions.map(t => t.id));
+    if (!userId) return;
+    const snapshot = await get(ref(db, `users/${userId}/transactions`));
+    const existing: Transaction[] = snapshot.exists()
+      ? (Array.isArray(snapshot.val()) ? snapshot.val() : Object.values(snapshot.val()))
+      : [];
+    const existingIds = new Set(existing.map((t: Transaction) => t.id));
     const uniqueNew = newTransactions.filter(t => !existingIds.has(t.id));
-    
     if (uniqueNew.length > 0) {
-      await saveTransactions([...uniqueNew, ...transactions]);
+      await saveTransactions([...uniqueNew, ...existing]);
     }
   };
 

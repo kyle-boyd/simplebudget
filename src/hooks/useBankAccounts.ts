@@ -116,6 +116,9 @@ export function useBankAccounts(userId: string | null) {
     }
 
     const tellerTransactions: TellerTransaction[] = await response.json();
+    if (tellerTransactions.length > 0) {
+      console.log('[Teller] sample transaction:', tellerTransactions[0]);
+    }
 
     const transactions: Transaction[] = tellerTransactions
       .filter((t) => t.status === 'posted')
