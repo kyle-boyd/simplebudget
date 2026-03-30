@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ColumnDef } from '@tanstack/react-table';
-import { ArrowUpDown, Check, ListFilter, Trash2, AlertTriangle, Building2, RefreshCw, X, Loader2, Plus, Upload, Link, SlidersHorizontal } from 'lucide-react';
+import { ArrowUpDown, Check, ListFilter, Trash2, AlertTriangle, Building2, RefreshCw, X, Loader2, Plus, Upload, Link, SlidersHorizontal, Tag } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -20,6 +20,7 @@ import { useCategories } from '@/hooks/useCategories';
 import { useRules, Rule } from '@/hooks/useRules';
 import { useBankAccounts, BankAccount } from '@/hooks/useBankAccounts';
 import { useTellerConnect, TellerAuthorization } from '@/hooks/useTellerConnect';
+import { useCategoryMappings } from '@/hooks/useCategoryMappings';
 import { formatCurrency, createTransactionId, parseDate, detectCategoryColumn, scoreCategoryMatch, detectDateColumn, detectAmountColumn, detectDescriptionColumn } from '@/lib/utils';
 import Papa from 'papaparse';
 
@@ -29,7 +30,8 @@ export function Transactions() {
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
   const { transactions, addTransactions, updateTransaction, saveTransactions, toggleConfirm, deleteTransactionsByAccount } = useTransactions(user?.uid || null);
-  const { categories } = useCategories(user?.uid || null);
+  const { categories, addCategory } = useCategories(user?.uid || null);
+  const { mappings, addMapping, deleteMapping } = useCategoryMappings(user?.uid || null);
   const { rules, addRule, updateRule, deleteRule, findConflict } = useRules(user?.uid || null);
   const [selectedMonth, setSelectedMonth] = useState(() => {
     // Initialize from localStorage if available
@@ -57,6 +59,8 @@ export function Transactions() {
   const [mobileSearchValue, setMobileSearchValue] = useState('');
   const [showMobileFilters, setShowMobileFilters] = useState(false);
 
+  const [saveAsMapping, setSaveAsMapping] = useState(false);
+
   const [syncingAccountId, setSyncingAccountId] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [showAccountsModal, setShowAccountsModal] = useState(false);
@@ -65,6 +69,16 @@ export function Transactions() {
 
   const { bankAccounts, loading: bankAccountsLoading, connectAccounts, syncTransactions, removeAccount } = useBankAccounts(user?.uid || null);
 
+  const formatImportedCategory = (raw: string) =>
+    raw.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+
+  const applyMappings = (txns: Transaction[]) =>
+    txns.map(t =>
+      t.importedCategory && !t.Category && mappings[t.importedCategory]
+        ? { ...t, Category: mappings[t.importedCategory] }
+        : t
+    );
+
   const hasSyncedOnLogin = useRef(false);
   useEffect(() => {
     if (bankAccountsLoading || bankAccounts.length === 0 || hasSyncedOnLogin.current) return;
@@ -72,7 +86,7 @@ export function Transactions() {
     bankAccounts.forEach(async (account) => {
       try {
         const newTransactions = await syncTransactions(account);
-        await addTransactions(newTransactions);
+        await addTransactions(applyMappings(newTransactions));
       } catch {
         // silently skip accounts that fail on auto-sync
       }
@@ -97,7 +111,7 @@ export function Transactions() {
     setSyncError(null);
     try {
       const newTransactions = await syncTransactions(account);
-      await addTransactions(newTransactions);
+      await addTransactions(applyMappings(newTransactions));
     } catch (err) {
       setSyncError(`Failed to sync ${account.name}. Please try again.`);
     } finally {
@@ -287,14 +301,41 @@ export function Transactions() {
     });
   };
 
-  const handleSaveChanges = () => {
+  const handleAddToBudget = async () => {
+    if (!selectedTransaction?.importedCategory) return;
+    const name = formatImportedCategory(selectedTransaction.importedCategory);
+    const newCategoryId = Date.now();
+    const newSubId = newCategoryId + 1;
+    await addCategory({ id: newCategoryId, name, subcategories: [{ id: newSubId, name, amount: 0 }] });
+    setSelectedCategory(name);
+    setSaveAsMapping(true);
+  };
+
+  const handleSaveChanges = async () => {
     if (!selectedTransaction) return;
 
-    updateTransaction(selectedTransaction.id, {
-      Category: selectedCategory || selectedTransaction.Category,
-      hasRule: createRule,
-    });
+    const categoryToSave = selectedCategory || selectedTransaction.Category;
 
+    if (saveAsMapping && selectedTransaction.importedCategory && selectedCategory) {
+      await addMapping(selectedTransaction.importedCategory, selectedCategory);
+      // Apply mapping retroactively to all unconfirmed transactions with same importedCategory
+      const importedCat = selectedTransaction.importedCategory;
+      const allUpdated = transactions.map(t => {
+        if (t.id === selectedTransaction.id) return { ...t, Category: categoryToSave, hasRule: createRule };
+        if (t.importedCategory === importedCat && !t.confirmed && !t.Category) {
+          return { ...t, Category: selectedCategory };
+        }
+        return t;
+      });
+      await saveTransactions(allUpdated);
+    } else {
+      await updateTransaction(selectedTransaction.id, {
+        Category: categoryToSave,
+        hasRule: createRule,
+      });
+    }
+
+    setSaveAsMapping(false);
     setIsEditPanelOpen(false);
 
     if (createRule && selectedCategory) {
@@ -529,12 +570,19 @@ export function Transactions() {
         const isValidCategory = categories.some(cat =>
           cat.subcategories.some(sub => sub.name === transaction.Category)
         );
+        const hasUnmappedImport = transaction.importedCategory && !transaction.Category;
 
         return (
           <div
             className={`w-full ${!isValidCategory && transaction.Category ? 'text-destructive' : ''}`}
             onClick={(e) => e.stopPropagation()}
           >
+            {hasUnmappedImport && (
+              <div className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 mb-1">
+                <Tag className="h-3 w-3 shrink-0" />
+                <span className="truncate" title={transaction.importedCategory}>{transaction.importedCategory}</span>
+              </div>
+            )}
             {transaction.confirmed ? (
               transaction.Category || 'No Category'
             ) : (
@@ -668,7 +716,7 @@ export function Transactions() {
                     bankAccounts.forEach(async (account) => {
                       try {
                         const newTransactions = await syncTransactions(account);
-                        await addTransactions(newTransactions);
+                        await addTransactions(applyMappings(newTransactions));
                       } catch {
                         // silently skip
                       }
@@ -754,7 +802,7 @@ export function Transactions() {
                     bankAccounts.forEach(async (account) => {
                       try {
                         const newTransactions = await syncTransactions(account);
-                        await addTransactions(newTransactions);
+                        await addTransactions(applyMappings(newTransactions));
                       } catch {
                         // silently skip
                       }
@@ -813,6 +861,7 @@ export function Transactions() {
               setSelectedCategory(transaction.Category || '');
               setCreateRule(transaction.hasRule || false);
               setIsOverridingRule(false);
+              setSaveAsMapping(false);
               setIsEditPanelOpen(true);
             }}
             getRowClassName={(transaction) => {
@@ -859,8 +908,24 @@ export function Transactions() {
                 })()}
               </div>
 
+              {selectedTransaction.importedCategory && (
+                <div className="flex items-center justify-between rounded-md bg-muted/50 border px-3 py-2">
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground min-w-0">
+                    <Tag className="h-3 w-3 shrink-0" />
+                    <span className="truncate" title={selectedTransaction.importedCategory}>
+                      Bank: <span className="font-medium text-foreground">{selectedTransaction.importedCategory}</span>
+                    </span>
+                  </div>
+                  {!categories.some(cat => cat.subcategories.some(sub => sub.name === selectedTransaction.importedCategory)) && (
+                    <Button variant="ghost" size="sm" className="h-6 text-xs shrink-0 ml-2" onClick={handleAddToBudget}>
+                      + Add to budget
+                    </Button>
+                  )}
+                </div>
+              )}
+
               <div className="space-y-2">
-                <label className="text-sm font-medium">Category</label>
+                <label className="text-sm font-medium">Budget Category</label>
                 <Select
                   value={selectedCategory}
                   onValueChange={(value) => {
@@ -898,6 +963,20 @@ export function Transactions() {
                   <p className="text-xs text-amber-800 dark:text-amber-300">
                     This overrides the existing rule. Only this transaction will be recategorized.
                   </p>
+                </div>
+              )}
+
+              {selectedTransaction.importedCategory && selectedCategory && (
+                <div className="flex items-start space-x-2">
+                  <Checkbox
+                    id="save-mapping"
+                    checked={saveAsMapping}
+                    onCheckedChange={(checked) => setSaveAsMapping(checked as boolean)}
+                    className="mt-0.5"
+                  />
+                  <label htmlFor="save-mapping" className="text-sm leading-snug">
+                    Always map <strong>"{selectedTransaction.importedCategory}"</strong> → <strong>"{selectedCategory}"</strong>
+                  </label>
                 </div>
               )}
 
@@ -982,8 +1061,24 @@ export function Transactions() {
                     })()}
                   </div>
 
+                  {selectedTransaction.importedCategory && (
+                    <div className="flex items-center justify-between rounded-md bg-muted/50 border px-3 py-2">
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground min-w-0">
+                        <Tag className="h-3 w-3 shrink-0" />
+                        <span className="truncate" title={selectedTransaction.importedCategory}>
+                          Bank: <span className="font-medium text-foreground">{selectedTransaction.importedCategory}</span>
+                        </span>
+                      </div>
+                      {!categories.some(cat => cat.subcategories.some(sub => sub.name === selectedTransaction.importedCategory)) && (
+                        <Button variant="ghost" size="sm" className="h-6 text-xs shrink-0 ml-2" onClick={handleAddToBudget}>
+                          + Add to budget
+                        </Button>
+                      )}
+                    </div>
+                  )}
+
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Category</label>
+                    <label className="text-sm font-medium">Budget Category</label>
                     <Select
                       value={selectedCategory}
                       onValueChange={(value) => {
@@ -1021,6 +1116,20 @@ export function Transactions() {
                       <p className="text-xs text-amber-800 dark:text-amber-300">
                         This overrides the existing rule. Only this transaction will be recategorized.
                       </p>
+                    </div>
+                  )}
+
+                  {selectedTransaction.importedCategory && selectedCategory && (
+                    <div className="flex items-start space-x-2">
+                      <Checkbox
+                        id="save-mapping-mobile"
+                        checked={saveAsMapping}
+                        onCheckedChange={(checked) => setSaveAsMapping(checked as boolean)}
+                        className="mt-0.5"
+                      />
+                      <label htmlFor="save-mapping-mobile" className="text-sm leading-snug">
+                        Always map <strong>"{selectedTransaction.importedCategory}"</strong> → <strong>"{selectedCategory}"</strong>
+                      </label>
                     </div>
                   )}
 
@@ -1100,6 +1209,38 @@ export function Transactions() {
                 ))
               )}
             </div>
+
+            {Object.keys(mappings).length > 0 && (
+              <>
+                <div className="border-t pt-4 mt-2">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Tag className="h-3.5 w-3.5 text-muted-foreground" />
+                    <p className="text-sm font-medium">Bank Category Mappings</p>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Automatically categorize transactions by their bank-assigned category.
+                  </p>
+                  <div className="space-y-2">
+                    {Object.entries(mappings).map(([imported, budget]) => (
+                      <div key={imported} className="flex items-start justify-between p-3 border rounded-md gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-mono truncate" title={imported}>{imported}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">→ {budget}</p>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="shrink-0 h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                          onClick={() => deleteMapping(imported)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
           </SheetContent>
         </Sheet>
 

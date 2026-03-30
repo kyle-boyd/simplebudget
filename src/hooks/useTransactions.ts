@@ -9,6 +9,7 @@ export interface Transaction {
   Amount: number;
   Description: string;
   Category?: string;
+  importedCategory?: string;
   confirmed?: boolean;
   hasRule?: boolean;
   bankAccountId?: string;

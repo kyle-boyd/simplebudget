@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { ref, onValue, set, update } from 'firebase/database';
 import { db, auth } from '@/lib/firebase';
 import { Transaction } from './useTransactions';
-import { createTransactionId, parseDate } from '@/lib/utils';
+import { parseDate } from '@/lib/utils';
 import { TellerAuthorization } from './useTellerConnect';
 
 export interface BankAccount {
@@ -46,6 +46,10 @@ interface TellerTransaction {
   type: string;
   details?: {
     category?: string;
+    counterparty?: {
+      name?: string;
+      type?: string;
+    };
   };
 }
 
@@ -118,12 +122,13 @@ export function useBankAccounts(userId: string | null) {
       .map((t) => {
         const amount = parseFloat(t.amount);
         const date = parseDate(t.date);
+        const description = t.details?.counterparty?.name || t.description;
         return {
-          id: createTransactionId({ Date: date, Description: t.description, Amount: amount }),
+          id: t.id,
           Date: date,
           Amount: amount,
-          Description: t.description,
-          Category: t.details?.category || null,
+          Description: description,
+          importedCategory: t.details?.category || undefined,
           confirmed: false,
           bankAccountId: account.id,
         };
