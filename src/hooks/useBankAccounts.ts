@@ -131,7 +131,7 @@ export function useBankAccounts(userId: string | null) {
           Date: date,
           Amount: amount,
           Description: description,
-          importedCategory: t.details?.category || undefined,
+          ...(t.details?.category ? { importedCategory: t.details.category } : {}),
           confirmed: false,
           bankAccountId: account.id,
         };
