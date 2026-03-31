@@ -59,8 +59,6 @@ export function Transactions() {
   const [mobileSearchValue, setMobileSearchValue] = useState('');
   const [showMobileFilters, setShowMobileFilters] = useState(false);
 
-  const [saveAsMapping, setSaveAsMapping] = useState(false);
-
   const [syncingAccountId, setSyncingAccountId] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [showAccountsModal, setShowAccountsModal] = useState(false);
@@ -311,7 +309,6 @@ export function Transactions() {
     const newSubId = newCategoryId + 1;
     await addCategory({ id: newCategoryId, name, subcategories: [{ id: newSubId, name, amount: 0 }] });
     setSelectedCategory(name);
-    setSaveAsMapping(true);
   };
 
   const handleSaveChanges = async () => {
@@ -319,13 +316,13 @@ export function Transactions() {
 
     const categoryToSave = selectedCategory || selectedTransaction.Category;
 
-    if (saveAsMapping && selectedTransaction.importedCategory && selectedCategory) {
+    if (selectedTransaction.importedCategory && selectedCategory) {
       await addMapping(selectedTransaction.importedCategory, selectedCategory);
-      // Apply mapping retroactively to all unconfirmed transactions with same importedCategory
+      // Apply mapping to all transactions with the same bank category
       const importedCat = selectedTransaction.importedCategory;
       const allUpdated = transactions.map(t => {
         if (t.id === selectedTransaction.id) return { ...t, Category: categoryToSave, hasRule: createRule };
-        if (t.importedCategory === importedCat && !t.confirmed && !t.Category) {
+        if (t.importedCategory === importedCat) {
           return { ...t, Category: selectedCategory };
         }
         return t;
@@ -338,7 +335,6 @@ export function Transactions() {
       });
     }
 
-    setSaveAsMapping(false);
     setIsEditPanelOpen(false);
 
     if (createRule && selectedCategory) {
@@ -970,17 +966,9 @@ export function Transactions() {
               )}
 
               {selectedTransaction.importedCategory && selectedCategory && (
-                <div className="flex items-start space-x-2">
-                  <Checkbox
-                    id="save-mapping"
-                    checked={saveAsMapping}
-                    onCheckedChange={(checked) => setSaveAsMapping(checked as boolean)}
-                    className="mt-0.5"
-                  />
-                  <label htmlFor="save-mapping" className="text-sm leading-snug">
-                    Always map <strong>"{selectedTransaction.importedCategory}"</strong> → <strong>"{selectedCategory}"</strong>
-                  </label>
-                </div>
+                <p className="text-xs text-muted-foreground">
+                  Saving will map all <strong>"{formatImportedCategory(selectedTransaction.importedCategory)}"</strong> bank transactions → <strong>"{selectedCategory}"</strong>
+                </p>
               )}
 
               <div className="flex items-center space-x-2">
@@ -1123,17 +1111,9 @@ export function Transactions() {
                   )}
 
                   {selectedTransaction.importedCategory && selectedCategory && (
-                    <div className="flex items-start space-x-2">
-                      <Checkbox
-                        id="save-mapping-mobile"
-                        checked={saveAsMapping}
-                        onCheckedChange={(checked) => setSaveAsMapping(checked as boolean)}
-                        className="mt-0.5"
-                      />
-                      <label htmlFor="save-mapping-mobile" className="text-sm leading-snug">
-                        Always map <strong>"{selectedTransaction.importedCategory}"</strong> → <strong>"{selectedCategory}"</strong>
-                      </label>
-                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Saving will map all <strong>"{formatImportedCategory(selectedTransaction.importedCategory)}"</strong> bank transactions → <strong>"{selectedCategory}"</strong>
+                    </p>
                   )}
 
                   <div className="flex items-center space-x-2">
@@ -1213,37 +1193,37 @@ export function Transactions() {
               )}
             </div>
 
-            {Object.keys(mappings).length > 0 && (
-              <>
-                <div className="border-t pt-4 mt-2">
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <Tag className="h-3.5 w-3.5 text-muted-foreground" />
-                    <p className="text-sm font-medium">Bank Category Mappings</p>
-                  </div>
-                  <p className="text-xs text-muted-foreground mb-3">
-                    Automatically categorize transactions by their bank-assigned category.
-                  </p>
-                  <div className="space-y-2">
-                    {Object.entries(mappings).map(([imported, budget]) => (
-                      <div key={imported} className="flex items-start justify-between p-3 border rounded-md gap-2">
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-mono truncate" title={imported}>{imported}</p>
-                          <p className="text-xs text-muted-foreground mt-0.5">→ {budget}</p>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="shrink-0 h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                          onClick={() => deleteMapping(imported)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+            <div className="border-t pt-4 mt-2">
+              <div className="flex items-center gap-1.5 mb-2">
+                <Tag className="h-3.5 w-3.5 text-muted-foreground" />
+                <p className="text-sm font-medium">Bank Category Mappings</p>
+              </div>
+              <p className="text-xs text-muted-foreground mb-3">
+                When you categorize a transaction, all transactions with the same bank category are updated automatically.
+              </p>
+              {Object.keys(mappings).length === 0 ? (
+                <p className="text-xs text-muted-foreground italic">No mappings yet. Assign a budget category to any bank transaction to create one.</p>
+              ) : (
+                <div className="space-y-2">
+                  {Object.entries(mappings).map(([imported, budget]) => (
+                    <div key={imported} className="flex items-start justify-between p-3 border rounded-md gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium truncate" title={imported}>{formatImportedCategory(imported)}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">→ {budget}</p>
                       </div>
-                    ))}
-                  </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="shrink-0 h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                        onClick={() => deleteMapping(imported)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ))}
                 </div>
-              </>
-            )}
+              )}
+            </div>
           </SheetContent>
         </Sheet>
 
