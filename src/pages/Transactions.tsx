@@ -83,7 +83,7 @@ export function Transactions() {
   useEffect(() => {
     if (bankAccountsLoading || bankAccounts.length === 0 || hasSyncedOnLogin.current) return;
     hasSyncedOnLogin.current = true;
-    (async () => {
+    const sync = async () => {
       for (const account of bankAccounts) {
         try {
           const newTransactions = await syncTransactions(account);
@@ -93,6 +93,8 @@ export function Transactions() {
         }
       }
     })();
+    };
+    sync();
   }, [bankAccountsLoading, bankAccounts.length]);
 
   const handleTellerSuccess = async (authorization: TellerAuthorization) => {
