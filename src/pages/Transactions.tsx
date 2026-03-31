@@ -83,14 +83,16 @@ export function Transactions() {
   useEffect(() => {
     if (bankAccountsLoading || bankAccounts.length === 0 || hasSyncedOnLogin.current) return;
     hasSyncedOnLogin.current = true;
-    for (const account of bankAccounts) {
-      try {
-        const newTransactions = await syncTransactions(account);
-        await addTransactions(applyMappings(newTransactions));
-      } catch (err) {
-        console.error(`Auto-sync failed for ${account.name}:`, err);
+    (async () => {
+      for (const account of bankAccounts) {
+        try {
+          const newTransactions = await syncTransactions(account);
+          await addTransactions(applyMappings(newTransactions));
+        } catch (err) {
+          console.error(`Auto-sync failed for ${account.name}:`, err);
+        }
       }
-    }
+    })();
   }, [bankAccountsLoading, bankAccounts.length]);
 
   const handleTellerSuccess = async (authorization: TellerAuthorization) => {
