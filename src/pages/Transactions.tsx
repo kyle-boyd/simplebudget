@@ -90,7 +90,6 @@ export function Transactions() {
           console.error(`Auto-sync failed for ${account.name}:`, err);
         }
       }
-    })();
     };
     sync();
   }, [bankAccountsLoading, bankAccounts.length]);
