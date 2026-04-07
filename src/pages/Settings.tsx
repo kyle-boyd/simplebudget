@@ -275,11 +275,11 @@ export function Settings() {
 
   return (
     <Layout>
-      <div className="space-y-8 py-6">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-          <p className="text-muted-foreground">Manage your preferences and account.</p>
+      <div className="space-y-8">
+        <div className="sticky top-0 z-10 h-auto lg:h-16 flex items-center bg-background border-b -mx-4 lg:-mx-6 px-4 lg:px-6 py-3 lg:py-0">
+          <h1 className="font-medium">Settings</h1>
         </div>
+        <div className="pb-6 space-y-8">
 
         {/* Account Connections */}
         <Card>
@@ -509,6 +509,7 @@ export function Settings() {
             </Button>
           </CardContent>
         </Card>
+        </div>
       </div>
 
       {/* Remove Bank Account Dialog */}
