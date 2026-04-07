@@ -20,6 +20,7 @@ export function Dashboard() {
     return localStorage.getItem(SELECTED_MONTH_KEY) || 'All Months';
   });
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [budgetChartPeriod, setBudgetChartPeriod] = useState('6');
 
   // Save to localStorage whenever selectedMonth changes
   useEffect(() => {
@@ -409,6 +410,15 @@ export function Dashboard() {
     ];
   })();
 
+  // Helper function to get months to include based on selected period
+  const getMonthsForPeriod = (months: number): number[] => {
+    const monthIndices: number[] = [];
+    for (let i = 0; i < months; i++) {
+      monthIndices.push(i);
+    }
+    return monthIndices;
+  };
+
   // Yearly budget chart data
   const yearlyData = (() => {
     const validCategories = new Set<string>();
@@ -449,10 +459,10 @@ export function Dashboard() {
     });
 
     const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return monthLabels.map((month, index) => {
+    const allMonthsData = monthLabels.map((month, index) => {
       const spent = monthlySpending[index];
       const budgeted = totalBudget;
-      
+
       if (spent <= budgeted) {
         // When spent is below budgeted: spent is base (nearest Y axis), remaining budgeted on top
         return {
@@ -477,6 +487,9 @@ export function Dashboard() {
         };
       }
     });
+
+    const months = parseInt(budgetChartPeriod);
+    return allMonthsData.slice(-months);
   })();
 
   return (
@@ -501,8 +514,28 @@ export function Dashboard() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:items-stretch lg:h-full">
             <Card className="flex flex-col md:col-span-2 shadow-none overflow-hidden">
               <CardHeader className="flex-shrink-0">
-                <CardTitle>Budget vs Actual</CardTitle>
-                <CardDescription>Showing monthly data for the current year</CardDescription>
+                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                  <div>
+                    <CardTitle>Budget vs Actual</CardTitle>
+                    <CardDescription>
+                      {budgetChartPeriod === '3'
+                        ? 'Showing last 3 months'
+                        : budgetChartPeriod === '6'
+                        ? 'Showing last 6 months'
+                        : 'Showing last 12 months'}
+                    </CardDescription>
+                  </div>
+                  <Select value={budgetChartPeriod} onValueChange={setBudgetChartPeriod}>
+                    <SelectTrigger className="w-full lg:w-[180px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="3">Last 3 months</SelectItem>
+                      <SelectItem value="6">Last 6 months</SelectItem>
+                      <SelectItem value="12">Last 12 months</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </CardHeader>
               <CardContent className="flex-1 lg:min-h-0 overflow-hidden">
                 <ChartContainer config={chartConfig} className="h-[250px] lg:h-full w-full">
@@ -510,12 +543,12 @@ export function Dashboard() {
                     data={yearlyData}
                     barSize={40}
                   >
-                    <XAxis 
-                      dataKey="month" 
+                    <XAxis
+                      dataKey="month"
                       tickLine={false}
-                      axisLine={false}
+                      axisLine={true}
                     />
-                    <YAxis hide />
+                    <YAxis axisLine={true} tickLine={false} />
                     <ChartTooltip 
                       content={({ active, payload }) => {
                         if (!active || !payload || payload.length === 0) return null;
@@ -711,13 +744,13 @@ export function Dashboard() {
                   }}
                   style={{ cursor: selectedCategory ? 'default' : 'pointer' }}
                 >
-                  <XAxis type="number" hide />
-                  <YAxis 
-                    dataKey="category" 
-                    type="category" 
+                  <XAxis type="number" axisLine={true} tickLine={false} />
+                  <YAxis
+                    dataKey="category"
+                    type="category"
                     width={120}
                     tickLine={false}
-                    axisLine={false}
+                    axisLine={true}
                   />
                   <ChartTooltip 
                     content={({ active, payload }) => {

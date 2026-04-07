@@ -201,8 +201,8 @@ export function DataTable<TData, TValue>({
     : "all"
 
   return (
-    <div className="w-full space-y-4">
-      <div className="flex items-center justify-between gap-4">
+    <div className="w-full space-y-4 flex flex-col h-full">
+      <div className="flex items-center justify-between gap-4 flex-shrink-0">
         <div className="flex items-center gap-4 flex-1">
           {!hideSearchBar && searchKey && (
             <Input
@@ -265,7 +265,7 @@ export function DataTable<TData, TValue>({
           )}
         </div>
       </div>
-      <div className="rounded-md border">
+      <div className="rounded-md border overflow-auto flex-1 min-h-0">
         <Table>
           {!compact && (
             <TableHeader>
@@ -412,7 +412,7 @@ export function DataTable<TData, TValue>({
           </TableBody>
         </Table>
       </div>
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-2">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-2 flex-shrink-0">
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
           <div className="flex items-center gap-2">
             <p className="text-sm font-medium">Rows per page</p>

@@ -573,7 +573,7 @@ export function Transactions() {
 
         return (
           <div
-            className={`w-full ${!isValidCategory && transaction.Category ? 'text-destructive' : ''}`}
+            className={`w-full pl-4 ${!isValidCategory && transaction.Category ? 'text-destructive' : ''}`}
             onClick={(e) => e.stopPropagation()}
           >
             {hasUnmappedImport && (
@@ -627,10 +627,10 @@ export function Transactions() {
       cell: ({ row }) => {
         const transaction = row.original;
         return (
-          <div className="group flex items-center justify-center">
-            {transaction.confirmed ? (
-              <div className="grid grid-cols-3 items-center gap-2 w-full max-w-[300px]">
-                <div className="flex justify-start">
+          <div className="group flex items-center justify-center w-full">
+            <div className="grid grid-cols-3 items-center gap-2 w-full max-w-[300px]">
+              <div className="flex justify-start">
+                {transaction.confirmed && (
                   <Button
                     size="sm"
                     variant="ghost"
@@ -642,31 +642,33 @@ export function Transactions() {
                   >
                     Unconfirm
                   </Button>
-                </div>
-                <div className="flex justify-center">
+                )}
+              </div>
+              <div className="flex justify-center">
+                {transaction.confirmed ? (
                   <Badge variant="outline" className="flex items-center gap-1.5">
                     <div className="h-3.5 w-3.5 rounded-full bg-green-600 dark:bg-green-400 flex items-center justify-center">
                       <Check className="h-2 w-2 text-white stroke-[3]" />
                     </div>
                     Confirmed
                   </Badge>
-                </div>
-                <div className="flex justify-end">
-                  {/* Empty spacer to balance layout */}
-                </div>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleConfirm(transaction.id);
+                    }}
+                  >
+                    Confirm
+                  </Button>
+                )}
               </div>
-            ) : (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleConfirm(transaction.id);
-                }}
-              >
-                Confirm
-              </Button>
-            )}
+              <div className="flex justify-end">
+                {/* Empty spacer to balance layout */}
+              </div>
+            </div>
           </div>
         )
       },
@@ -860,7 +862,6 @@ export function Transactions() {
               setSelectedCategory(transaction.Category || '');
               setCreateRule(transaction.hasRule || false);
               setIsOverridingRule(false);
-              setSaveAsMapping(false);
               setIsEditPanelOpen(true);
             }}
             getRowClassName={(transaction) => {
@@ -912,7 +913,7 @@ export function Transactions() {
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground min-w-0">
                     <Tag className="h-3 w-3 shrink-0" />
                     <span className="truncate" title={selectedTransaction.importedCategory}>
-                      Bank: <span className="font-medium text-foreground">{selectedTransaction.importedCategory}</span>
+                      Bank: <span className="font-medium text-foreground">{formatImportedCategory(selectedTransaction.importedCategory)}</span>
                     </span>
                   </div>
                   {!categories.some(cat => cat.subcategories.some(sub => sub.name === selectedTransaction.importedCategory)) && (
@@ -1057,7 +1058,7 @@ export function Transactions() {
                       <div className="flex items-center gap-1.5 text-xs text-muted-foreground min-w-0">
                         <Tag className="h-3 w-3 shrink-0" />
                         <span className="truncate" title={selectedTransaction.importedCategory}>
-                          Bank: <span className="font-medium text-foreground">{selectedTransaction.importedCategory}</span>
+                          Bank: <span className="font-medium text-foreground">{formatImportedCategory(selectedTransaction.importedCategory)}</span>
                         </span>
                       </div>
                       {!categories.some(cat => cat.subcategories.some(sub => sub.name === selectedTransaction.importedCategory)) && (
