@@ -59,6 +59,7 @@ export function Transactions() {
   const [isMobile, setIsMobile] = useState(false);
   const [mobileSearchValue, setMobileSearchValue] = useState('');
   const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const [mobileCategoryFilter, setMobileCategoryFilter] = useState('all');
 
   const [syncingAccountId, setSyncingAccountId] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -776,7 +777,7 @@ export function Transactions() {
         </div>
 
         {/* Desktop Header */}
-        <div className="hidden lg:flex sticky top-0 z-10 h-16 justify-between items-center bg-background border-b -mx-6 px-6">
+        <div className="hidden lg:flex sticky top-0 z-10 h-16 justify-between items-center bg-background border-b -mx-6 px-6 -mt-6">
           <h1 className="font-medium">Transactions</h1>
           <div className="flex items-center gap-4">
             <Select value={selectedMonth} onValueChange={setSelectedMonth}>
@@ -850,11 +851,12 @@ export function Transactions() {
             data={filteredTransactions}
             searchPlaceholder="Search transactions..."
             categoryFilterKey="Category"
-            categoryFilterGroups={categoryGroups}
+            categoryFilterGroups={isMobile ? [] : categoryGroups}
             categoryFilterPlaceholder="Filter by category"
             initialCategoryFilter={categoryFilterFromUrl}
             hideSearchBar={isMobile}
             externalGlobalFilter={isMobile ? mobileSearchValue : undefined}
+            externalCategoryFilter={isMobile ? mobileCategoryFilter : undefined}
 
             extraFilters={isMobile ? undefined : (
               <Select value={confirmFilter} onValueChange={(v) => setConfirmFilter(v as 'all' | 'unconfirmed' | 'confirmed')}>
@@ -868,7 +870,7 @@ export function Transactions() {
                 </SelectContent>
               </Select>
             )}
-            forceHiddenColumnIds={isMobile ? ['select', 'Category', 'confirmed', 'Date'] : undefined}
+            forceHiddenColumnIds={isMobile ? ['select', 'Category', 'confirmed', 'Date', 'account'] : undefined}
             compact={isMobile}
             columnOrder={isMobile ? ['Description', 'Amount', 'select', 'Category', 'confirmed', 'Date'] : undefined}
             onSwipeRight={isMobile ? (transaction) => toggleConfirm(transaction.id) : undefined}
@@ -1295,6 +1297,30 @@ export function Transactions() {
                 </Select>
               </div>
               <div className="space-y-1.5">
+                <label className="text-sm font-medium">Category</label>
+                <Select value={mobileCategoryFilter} onValueChange={setMobileCategoryFilter}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Filter by category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Categories</SelectItem>
+                    {categoryGroups.map((group, index) => (
+                      <React.Fragment key={group.id}>
+                        <SelectGroup>
+                          <SelectLabel>{group.name}</SelectLabel>
+                          {group.subcategories.map(sub => (
+                            <SelectItem key={sub.id} value={sub.value}>
+                              {sub.label || sub.value}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                        {index < categoryGroups.length - 1 && <SelectSeparator />}
+                      </React.Fragment>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
                 <label className="text-sm font-medium">Status</label>
                 <Select value={confirmFilter} onValueChange={(v) => setConfirmFilter(v as 'all' | 'unconfirmed' | 'confirmed')}>
                   <SelectTrigger className="w-full">
@@ -1307,13 +1333,14 @@ export function Transactions() {
                   </SelectContent>
                 </Select>
               </div>
-              {(selectedMonth !== 'All Months' || confirmFilter !== 'all') && (
+              {(selectedMonth !== 'All Months' || confirmFilter !== 'all' || mobileCategoryFilter !== 'all') && (
                 <Button
                   variant="outline"
                   className="w-full"
                   onClick={() => {
                     setSelectedMonth('All Months');
                     setConfirmFilter('all');
+                    setMobileCategoryFilter('all');
                   }}
                 >
                   Clear Filters
