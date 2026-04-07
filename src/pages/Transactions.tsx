@@ -12,6 +12,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Checkbox } from '@/components/ui/checkbox';
 import { DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/ui/responsive-dialog';
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { DataTable } from '@/components/ui/data-table';
 import { useAuth } from '@/hooks/useAuth';
@@ -67,8 +68,10 @@ export function Transactions() {
 
   const { bankAccounts, loading: bankAccountsLoading, connectAccounts, syncTransactions, removeAccount } = useBankAccounts(user?.uid || null);
 
-  const formatImportedCategory = (raw: string) =>
-    raw.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  const formatImportedCategory = (raw: string) => {
+    const formatted = raw.replace(/_/g, ' ');
+    return formatted.charAt(0).toUpperCase() + formatted.slice(1).toLowerCase();
+  };
 
   const applyMappings = (txns: Transaction[]) =>
     txns.map(t =>
@@ -573,15 +576,9 @@ export function Transactions() {
 
         return (
           <div
-            className={`w-full ml-4 ${!isValidCategory && transaction.Category ? 'text-destructive' : ''}`}
+            className={`w-full ml-4 flex items-center gap-2 ${!isValidCategory && transaction.Category ? 'text-destructive' : ''}`}
             onClick={(e) => e.stopPropagation()}
           >
-            {hasUnmappedImport && (
-              <div className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 mb-1">
-                <Tag className="h-3 w-3 shrink-0" />
-                <span className="truncate" title={transaction.importedCategory}>{transaction.importedCategory}</span>
-              </div>
-            )}
             {transaction.confirmed ? (
               transaction.Category || 'No Category'
             ) : (
@@ -610,6 +607,12 @@ export function Transactions() {
                   ))}
                 </SelectContent>
               </Select>
+            )}
+            {hasUnmappedImport && (
+              <div className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 shrink-0">
+                <Tag className="h-3 w-3 shrink-0" />
+                <span className="truncate" title={transaction.importedCategory}>{formatImportedCategory(transaction.importedCategory)}</span>
+              </div>
             )}
           </div>
         )
@@ -646,23 +649,35 @@ export function Transactions() {
               </div>
               <div className="flex justify-center">
                 {transaction.confirmed ? (
-                  <Badge variant="outline" className="flex items-center gap-1.5">
+                  <Badge variant="outline" className="flex items-center gap-1.5 bg-green-50 dark:bg-green-950">
                     <div className="h-3.5 w-3.5 rounded-full bg-green-600 dark:bg-green-400 flex items-center justify-center">
                       <Check className="h-2 w-2 text-white stroke-[3]" />
                     </div>
                     Confirmed
                   </Badge>
                 ) : (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleConfirm(transaction.id);
-                    }}
-                  >
-                    Confirm
-                  </Button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span tabIndex={!transaction.Category ? 0 : undefined}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={!transaction.Category}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleConfirm(transaction.id);
+                          }}
+                        >
+                          Confirm
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    {!transaction.Category && (
+                      <TooltipContent>
+                        Select a category before confirming
+                      </TooltipContent>
+                    )}
+                  </Tooltip>
                 )}
               </div>
               <div className="flex justify-end">
@@ -678,8 +693,9 @@ export function Transactions() {
   const isMobileSheetOpen = isMobile && isEditPanelOpen && !!selectedTransaction;
 
   return (
-    <Layout>
-      <div className="flex flex-col min-h-0 flex-1 gap-4">
+    <TooltipProvider>
+      <Layout>
+        <div className="space-y-6 flex flex-col min-h-0 flex-1">
         {/* Hidden file input shared between mobile and desktop */}
         <Input
           type="file"
@@ -825,7 +841,7 @@ export function Transactions() {
 
       <div className="lg:flex lg:items-start lg:gap-3 min-h-0 flex-1">
         <div
-          className={`flex-1 min-w-0 transition-[padding,max-width] duration-300 flex flex-col overflow-hidden ${
+          className={`flex-1 min-w-0 transition-[padding,max-width] duration-300 flex flex-col min-h-0 ${
             isEditPanelOpen && selectedTransaction ? 'lg:pr-6' : ''
           }`}
         >
@@ -852,7 +868,7 @@ export function Transactions() {
                 </SelectContent>
               </Select>
             )}
-            forceHiddenColumnIds={isMobile ? ['select', 'Category', 'confirmed', 'Date', 'account'] : undefined}
+            forceHiddenColumnIds={isMobile ? ['select', 'Category', 'confirmed', 'Date'] : undefined}
             compact={isMobile}
             columnOrder={isMobile ? ['Description', 'Amount', 'select', 'Category', 'confirmed', 'Date'] : undefined}
             onSwipeRight={isMobile ? (transaction) => toggleConfirm(transaction.id) : undefined}
@@ -997,9 +1013,24 @@ export function Transactions() {
                 >
                   Cancel
                 </Button>
-                <Button onClick={handleSaveChanges} className="flex-1">
-                  Save
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="flex-1" tabIndex={!selectedCategory ? 0 : undefined}>
+                      <Button
+                        onClick={handleSaveChanges}
+                        className="w-full"
+                        disabled={!selectedCategory}
+                      >
+                        Save
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  {!selectedCategory && (
+                    <TooltipContent>
+                      Select a category before saving
+                    </TooltipContent>
+                  )}
+                </Tooltip>
               </div>
             </CardContent>
           </Card>
@@ -1142,9 +1173,24 @@ export function Transactions() {
                     >
                       Cancel
                     </Button>
-                    <Button onClick={handleSaveChanges} className="flex-1">
-                      Save
-                    </Button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="flex-1" tabIndex={!selectedCategory ? 0 : undefined}>
+                          <Button
+                            onClick={handleSaveChanges}
+                            className="w-full"
+                            disabled={!selectedCategory}
+                          >
+                            Save
+                          </Button>
+                        </span>
+                      </TooltipTrigger>
+                      {!selectedCategory && (
+                        <TooltipContent>
+                          Select a category before saving
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
                   </div>
                 </div>
               </>
@@ -1357,9 +1403,23 @@ export function Transactions() {
               >
                 Cancel
               </Button>
-              <Button onClick={handleConfirmRule}>
-                {conflictingRule ? 'Override Rule' : 'Create Rule'}
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span tabIndex={!pendingRule?.category ? 0 : undefined}>
+                    <Button
+                      onClick={handleConfirmRule}
+                      disabled={!pendingRule?.category}
+                    >
+                      {conflictingRule ? 'Override Rule' : 'Create Rule'}
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {!pendingRule?.category && (
+                  <TooltipContent>
+                    Select a category before confirming
+                  </TooltipContent>
+                )}
+              </Tooltip>
             </DialogFooter>
           </ResponsiveDialogContent>
         </ResponsiveDialog>
@@ -1631,8 +1691,9 @@ export function Transactions() {
             </DialogFooter>
           </ResponsiveDialogContent>
         </ResponsiveDialog>
-      </div>
-    </Layout>
+        </div>
+      </Layout>
+    </TooltipProvider>
   );
 }
 
