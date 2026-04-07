@@ -679,7 +679,7 @@ export function Transactions() {
 
   return (
     <Layout>
-      <div className="space-y-6 flex flex-col h-full overflow-hidden">
+      <div className="flex flex-col min-h-0 flex-1 gap-4">
         {/* Hidden file input shared between mobile and desktop */}
         <Input
           type="file"
@@ -852,7 +852,7 @@ export function Transactions() {
                 </SelectContent>
               </Select>
             )}
-            forceHiddenColumnIds={isMobile ? ['select', 'Category', 'confirmed', 'Date'] : undefined}
+            forceHiddenColumnIds={isMobile ? ['select', 'Category', 'confirmed', 'Date', 'account'] : undefined}
             compact={isMobile}
             columnOrder={isMobile ? ['Description', 'Amount', 'select', 'Category', 'confirmed', 'Date'] : undefined}
             onSwipeRight={isMobile ? (transaction) => toggleConfirm(transaction.id) : undefined}

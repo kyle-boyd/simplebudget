@@ -434,15 +434,40 @@ export function Dashboard() {
       }
     });
 
-    const monthlySpending = Array(12).fill(0);
+    // Get the last N months from today
+    const today = new Date();
+    const numMonths = parseInt(budgetChartPeriod);
+    const monthsToShow: { year: number; month: number }[] = [];
+
+    for (let i = numMonths - 1; i >= 0; i--) {
+      const date = new Date(today.getFullYear(), today.getMonth() - i, 1);
+      monthsToShow.push({ year: date.getFullYear(), month: date.getMonth() });
+    }
+
+    const monthlySpending: Record<string, number> = {};
+    const monthLabels: string[] = [];
+
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    monthsToShow.forEach(({ year, month }) => {
+      const key = `${year}-${month}`;
+      monthlySpending[key] = 0;
+      const shortYear = year.toString().slice(-2);
+      monthLabels.push(`${monthNames[month]} '${shortYear}`);
+    });
+
     transactions.forEach(transaction => {
       if (!transaction.Category || !transaction.Date) return;
       const transactionCategory = transaction.Category.trim().toLowerCase();
       if (!validCategories.has(transactionCategory)) return;
 
       const dateParts = transaction.Date.split('/');
-      const month = parseInt(dateParts[0]) - 1;
-      monthlySpending[month] += Math.abs(transaction.Amount);
+      const txMonth = parseInt(dateParts[0]) - 1;
+      const txYear = 2000 + parseInt(dateParts[2]);
+      const key = `${txYear}-${txMonth}`;
+
+      if (monthlySpending.hasOwnProperty(key)) {
+        monthlySpending[key] += Math.abs(transaction.Amount);
+      }
     });
 
     let totalBudget = 0;
@@ -458,15 +483,14 @@ export function Dashboard() {
       }
     });
 
-    const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const allMonthsData = monthLabels.map((month, index) => {
-      const spent = monthlySpending[index];
+    return monthsToShow.map((_, index) => {
+      const key = `${monthsToShow[index].year}-${monthsToShow[index].month}`;
+      const spent = monthlySpending[key] || 0;
       const budgeted = totalBudget;
 
       if (spent <= budgeted) {
-        // When spent is below budgeted: spent is base (nearest Y axis), remaining budgeted on top
         return {
-          month,
+          month: monthLabels[index],
           spent,
           budgeted,
           spentBase: spent,
@@ -475,9 +499,8 @@ export function Dashboard() {
           overage: 0,
         };
       } else {
-        // When spent is above budgeted: budgeted is base (light red), overage on top
         return {
-          month,
+          month: monthLabels[index],
           spent,
           budgeted,
           spentBase: 0,
@@ -487,9 +510,6 @@ export function Dashboard() {
         };
       }
     });
-
-    const months = parseInt(budgetChartPeriod);
-    return allMonthsData.slice(-months);
   })();
 
   return (
@@ -639,7 +659,7 @@ export function Dashboard() {
             <Card className="flex flex-col md:col-span-1 shadow-none overflow-hidden">
               <CardHeader className="flex-shrink-0">
                 <CardTitle>Categorization Progress</CardTitle>
-                <CardDescription>{getDateRange(filteredTransactions)}</CardDescription>
+                <CardDescription>{selectedMonth === 'All Months' ? 'All Months Average' : selectedMonth.replace(', ', ' ')}</CardDescription>
               </CardHeader>
               <CardContent className="flex-1 lg:min-h-0 overflow-hidden">
                 <div className="relative h-[250px] lg:h-full w-full">
@@ -724,7 +744,7 @@ export function Dashboard() {
                   </span>
                 )}
               </CardTitle>
-              <CardDescription>{getDateRange(filteredTransactions)}</CardDescription>
+              <CardDescription>{selectedMonth === 'All Months' ? 'All Months Average' : selectedMonth.replace(', ', ' ')}</CardDescription>
             </CardHeader>
             <CardContent className="flex-1 lg:min-h-0 overflow-hidden">
               <ChartContainer config={chartConfig} className="h-[300px] lg:h-full w-full">
