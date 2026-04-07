@@ -696,7 +696,7 @@ export function Transactions() {
   return (
     <TooltipProvider>
       <Layout>
-        <div className="space-y-6 flex flex-col min-h-0 flex-1">
+        <div className="flex flex-col min-h-0 flex-1">
         {/* Hidden file input shared between mobile and desktop */}
         <Input
           type="file"
@@ -755,7 +755,7 @@ export function Transactions() {
         </div>
 
         {/* Mobile Search + Filter Bar */}
-        <div className="lg:hidden flex items-center gap-2">
+        <div className="lg:hidden flex items-center gap-2 mt-3">
           <Input
             placeholder="Search transactions..."
             value={mobileSearchValue}
@@ -777,7 +777,7 @@ export function Transactions() {
         </div>
 
         {/* Desktop Header */}
-        <div className="hidden lg:flex sticky top-0 z-10 h-16 justify-between items-center bg-background border-b -mx-6 px-6 -mt-6">
+        <div className="hidden lg:flex sticky top-0 z-10 h-16 justify-between items-center bg-background border-b -mx-6 px-6">
           <h1 className="font-medium">Transactions</h1>
           <div className="flex items-center gap-4">
             <Select value={selectedMonth} onValueChange={setSelectedMonth}>
@@ -840,7 +840,7 @@ export function Transactions() {
           </div>
         </div>
 
-      <div className="lg:flex lg:items-start lg:gap-3 min-h-0 flex-1">
+      <div className="lg:flex lg:items-start lg:gap-3 min-h-0 flex-1 lg:mt-4">
         <div
           className={`flex-1 min-w-0 transition-[padding,max-width] duration-300 flex flex-col min-h-0 ${
             isEditPanelOpen && selectedTransaction ? 'lg:pr-6' : ''

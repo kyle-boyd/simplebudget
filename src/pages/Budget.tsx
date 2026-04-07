@@ -8,11 +8,12 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/ui/responsive-dialog';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { useAuth } from '@/hooks/useAuth';
 import { useCategories, Category, Subcategory } from '@/hooks/useCategories';
 import { useTransactions } from '@/hooks/useTransactions';
 import { formatCurrency } from '@/lib/utils';
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
 
 const SELECTED_MONTH_KEY = 'selectedMonth';
 
@@ -35,6 +36,15 @@ export function Budget() {
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
   const [deletingSubcategoryId, setDeletingSubcategoryId] = useState<number | null>(null);
   const [nameError, setNameError] = useState<string>('');
+  const [mobileSheet, setMobileSheet] = useState<{
+    type: 'subcategory' | 'category';
+    sub?: Subcategory;
+    category?: Category;
+    parentId?: number;
+  } | null>(null);
+  const [mobileSheetName, setMobileSheetName] = useState('');
+  const [mobileSheetAmount, setMobileSheetAmount] = useState('');
+  const [mobileSheetDeleteConfirm, setMobileSheetDeleteConfirm] = useState(false);
 
   // Save to localStorage whenever selectedMonth changes
   useEffect(() => {
@@ -395,6 +405,46 @@ export function Budget() {
     setShowDeleteConfirmation(false);
   };
 
+  const openMobileSubSheet = (sub: Subcategory, parentId: number) => {
+    setMobileSheet({ type: 'subcategory', sub, parentId });
+    setMobileSheetName(sub.name);
+    setMobileSheetAmount(formatAmountForInput(sub.amount));
+    setMobileSheetDeleteConfirm(false);
+  };
+
+  const openMobileCatSheet = (category: Category) => {
+    setMobileSheet({ type: 'category', category });
+    setMobileSheetName(category.name);
+    setMobileSheetAmount(formatAmountForInput(category.amount));
+    setMobileSheetDeleteConfirm(false);
+  };
+
+  const handleMobileSheetSave = () => {
+    if (!mobileSheet) return;
+    const trimmedName = mobileSheetName.trim();
+    if (!trimmedName) return;
+    const cleanedAmount = mobileSheetAmount.replace(/[$,]/g, '');
+    const amount = parseFloat(cleanedAmount) || 0;
+    if (mobileSheet.type === 'subcategory' && mobileSheet.sub && mobileSheet.parentId) {
+      updateSubcategory(mobileSheet.parentId, mobileSheet.sub.id, { name: trimmedName, amount });
+    } else if (mobileSheet.type === 'category' && mobileSheet.category) {
+      updateCategory(mobileSheet.category.id, { name: trimmedName, amount });
+    }
+    setMobileSheet(null);
+    setMobileSheetDeleteConfirm(false);
+  };
+
+  const handleMobileSheetDelete = () => {
+    if (!mobileSheet) return;
+    if (mobileSheet.type === 'subcategory' && mobileSheet.sub && mobileSheet.parentId) {
+      deleteSubcategory(mobileSheet.parentId, mobileSheet.sub.id);
+    } else if (mobileSheet.type === 'category' && mobileSheet.category) {
+      deleteCategory(mobileSheet.category.id);
+    }
+    setMobileSheet(null);
+    setMobileSheetDeleteConfirm(false);
+  };
+
   const regularCategories = categories.filter(cat => !cat.isSystem);
   const systemCategory = categories.find(cat => cat.isSystem);
 
@@ -434,7 +484,30 @@ export function Budget() {
                   <div className="space-y-4">
                     {/* Category Header */}
                     <div className="border-b py-2">
-                      <div className="flex items-center justify-between gap-2 group px-6 lg:px-8">
+                      {/* Mobile category header */}
+                      {!category.isSystem ? (
+                        <button
+                          className="lg:hidden flex items-center justify-between w-full px-6 py-1 text-left"
+                          onClick={() => openMobileCatSheet(category)}
+                        >
+                          <span className="font-semibold">{category.name}</span>
+                          <div className="flex items-center gap-2">
+                            <span>
+                              <span className={`text-sm font-medium ${isOverBudget ? 'text-destructive' : 'text-green-600'}`}>
+                                {formatCurrency(categorySpending)}
+                              </span>
+                              <span className="text-sm font-medium text-foreground"> of {formatCurrency(totalAmount)}</span>
+                            </span>
+                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                          </div>
+                        </button>
+                      ) : (
+                        <div className="lg:hidden flex items-center px-6 py-1">
+                          <span className="font-semibold">{category.name}</span>
+                        </div>
+                      )}
+                      {/* Desktop category header */}
+                      <div className="hidden lg:flex items-center justify-between gap-2 group px-8">
                       <div className="flex items-center gap-2 flex-1">
                         <span className="font-semibold">{category.name}</span>
                         {!category.isSystem && (
@@ -526,7 +599,25 @@ export function Budget() {
                         const isLast = index === (category.subcategories || []).length - 1;
                         
                         return (
-                          <div key={sub.id} className={`flex items-center justify-between gap-2 py-1 group ${!isLast ? 'border-b' : ''} px-6 lg:px-8`}>
+                          <div key={sub.id} className={`${!isLast ? 'border-b' : ''}`}>
+                            {sub.name && !sub.isSystem && (
+                              <button
+                                className="lg:hidden flex items-center justify-between w-full py-3 px-6 text-left"
+                                onClick={() => openMobileSubSheet(sub, category.id)}
+                              >
+                                <span className="font-medium">{sub.name}</span>
+                                <div className="flex items-center gap-2">
+                                  <span>
+                                    <span className={`text-sm ${isSubOverBudget ? 'text-destructive' : 'text-green-600'}`}>
+                                      {formatCurrency(spending)}
+                                    </span>
+                                    <span className="text-sm text-foreground"> of {formatCurrency(budget)}</span>
+                                  </span>
+                                  <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                                </div>
+                              </button>
+                            )}
+                            <div className={`${sub.name && !sub.isSystem ? 'hidden lg:flex' : 'flex'} items-center justify-between gap-2 py-1 group px-6 lg:px-8`}>
                             <div className="flex items-center gap-2 flex-1">
                               {isEditingName ? (
                                 <Input
@@ -656,9 +747,19 @@ export function Budget() {
                                 <div className="h-8 w-8" />
                               )}
                             </div>
+                            </div>
                           </div>
                         );
                       })}
+                  {!category.isSystem && (
+                    <button
+                      className="lg:hidden flex items-center gap-2 w-full px-6 py-3 text-sm text-muted-foreground border-t"
+                      onClick={() => handleAddSubcategory(category.id)}
+                    >
+                      <Plus className="h-4 w-4" />
+                      Add subcategory
+                    </button>
+                  )}
                 </div>
               </Card>
             );
@@ -893,6 +994,97 @@ export function Budget() {
             </DialogFooter>
           </ResponsiveDialogContent>
         </ResponsiveDialog>
+
+        <Sheet open={!!mobileSheet} onOpenChange={(open) => {
+          if (!open) {
+            setMobileSheet(null);
+            setMobileSheetDeleteConfirm(false);
+          }
+        }}>
+          <SheetContent side="bottom" className="lg:hidden rounded-t-xl" overlayClassName="bg-black/40 pointer-events-auto">
+            <SheetHeader className="text-left mb-4">
+              <SheetTitle>
+                {mobileSheet?.type === 'subcategory' ? mobileSheet.sub?.name : mobileSheet?.category?.name}
+              </SheetTitle>
+              <SheetDescription className="sr-only">Edit category details</SheetDescription>
+            </SheetHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="mobile-name">Name</Label>
+                <Input
+                  id="mobile-name"
+                  value={mobileSheetName}
+                  onChange={(e) => setMobileSheetName(e.target.value)}
+                  placeholder="Enter name"
+                />
+              </div>
+              {(mobileSheet?.type === 'subcategory' || (mobileSheet?.type === 'category' && !(mobileSheet.category?.subcategories || []).length)) && (
+                <div className="space-y-2">
+                  <Label htmlFor="mobile-amount">Budget</Label>
+                  <Input
+                    id="mobile-amount"
+                    value={mobileSheetAmount}
+                    onChange={(e) => {
+                      let value = e.target.value;
+                      if (!value.startsWith('$')) value = '$' + value;
+                      setMobileSheetAmount(value);
+                    }}
+                    onFocus={() => {
+                      const cleaned = mobileSheetAmount.replace(/[$,]/g, '');
+                      const amt = parseFloat(cleaned) || 0;
+                      setMobileSheetAmount(amt % 1 === 0 ? `$${amt.toFixed(0)}` : `$${amt.toFixed(2)}`);
+                    }}
+                    onBlur={() => {
+                      const cleaned = mobileSheetAmount.replace(/[$,]/g, '');
+                      const amt = parseFloat(cleaned) || 0;
+                      setMobileSheetAmount(amt % 1 === 0 ? `$${amt.toFixed(0)}` : `$${amt.toFixed(2)}`);
+                    }}
+                    placeholder="$0"
+                    className="text-right w-[140px]"
+                  />
+                </div>
+              )}
+              <Button
+                variant="outline"
+                className="w-full justify-between"
+                onClick={() => {
+                  const name = mobileSheet?.type === 'subcategory'
+                    ? mobileSheet.sub?.name
+                    : mobileSheet?.category?.name;
+                  if (name) navigate(`/transactions?category=${encodeURIComponent(name)}`);
+                  setMobileSheet(null);
+                }}
+              >
+                View Transactions
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="mt-6">
+              {mobileSheetDeleteConfirm ? (
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground text-center">Are you sure you want to delete this?</p>
+                  <div className="flex gap-2">
+                    <Button variant="outline" className="flex-1" onClick={() => setMobileSheetDeleteConfirm(false)}>
+                      Cancel
+                    </Button>
+                    <Button variant="destructive" className="flex-1" onClick={handleMobileSheetDelete}>
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <Button variant="outline" className="flex-1" onClick={() => setMobileSheetDeleteConfirm(true)}>
+                    Delete
+                  </Button>
+                  <Button className="flex-1" onClick={handleMobileSheetSave}>
+                    Save
+                  </Button>
+                </div>
+              )}
+            </div>
+          </SheetContent>
+        </Sheet>
       </div>
     </Layout>
   );
