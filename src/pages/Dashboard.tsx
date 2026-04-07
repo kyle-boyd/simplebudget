@@ -548,7 +548,7 @@ export function Dashboard() {
                       tickLine={false}
                       axisLine={true}
                     />
-                    <YAxis axisLine={true} tickLine={false} />
+                    <YAxis axisLine={false} tickLine={false} />
                     <ChartTooltip 
                       content={({ active, payload }) => {
                         if (!active || !payload || payload.length === 0) return null;
@@ -744,7 +744,7 @@ export function Dashboard() {
                   }}
                   style={{ cursor: selectedCategory ? 'default' : 'pointer' }}
                 >
-                  <XAxis type="number" axisLine={true} tickLine={false} />
+                  <XAxis type="number" axisLine={false} tickLine={false} />
                   <YAxis
                     dataKey="category"
                     type="category"

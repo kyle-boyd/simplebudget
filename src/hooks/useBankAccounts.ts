@@ -136,6 +136,11 @@ export function useBankAccounts(userId: string | null) {
           bankAccountId: account.id,
         };
       });
+    console.log('[syncTransactions] Converted', transactions.length, 'transactions from', tellerTransactions.length, 'Teller transactions');
+    const claudeTransaction = transactions.find(t => t.Description.includes('CLAUDE'));
+    if (claudeTransaction) {
+      console.log('[syncTransactions] Found Claude transaction:', claudeTransaction);
+    }
 
     if (userId) {
       await update(ref(db, `users/${userId}/bankAccounts/${account.id}`), {

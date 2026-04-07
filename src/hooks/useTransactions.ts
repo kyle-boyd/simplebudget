@@ -60,7 +60,9 @@ export function useTransactions(userId: string | null) {
       : [];
     const existingIds = new Set(existing.map((t: Transaction) => t.id));
     const uniqueNew = newTransactions.filter(t => !existingIds.has(t.id));
+    console.log('[addTransactions] New transactions to add:', uniqueNew.length);
     if (uniqueNew.length > 0) {
+      console.log('[addTransactions] Sample of new transactions:', uniqueNew.slice(0, 3));
       await saveTransactions([...uniqueNew, ...existing]);
     }
   };

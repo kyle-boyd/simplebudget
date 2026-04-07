@@ -548,13 +548,13 @@ export function Transactions() {
         });
         if (isMobile) {
           return (
-            <div className="text-right">
+            <div className="text-right pr-4">
               <div className="font-medium">{formatCurrency(amount)}</div>
               <div className="text-xs text-muted-foreground">{formattedDate}</div>
             </div>
           );
         }
-        return <div className="text-right font-medium">{formatCurrency(amount)}</div>
+        return <div className="text-right font-medium pr-4">{formatCurrency(amount)}</div>
       },
     },
     {
@@ -573,7 +573,7 @@ export function Transactions() {
 
         return (
           <div
-            className={`w-full pl-4 ${!isValidCategory && transaction.Category ? 'text-destructive' : ''}`}
+            className={`w-full ml-4 ${!isValidCategory && transaction.Category ? 'text-destructive' : ''}`}
             onClick={(e) => e.stopPropagation()}
           >
             {hasUnmappedImport && (
@@ -679,7 +679,7 @@ export function Transactions() {
 
   return (
     <Layout>
-      <div className="space-y-6">
+      <div className="space-y-6 flex flex-col h-full overflow-hidden">
         {/* Hidden file input shared between mobile and desktop */}
         <Input
           type="file"
@@ -823,9 +823,9 @@ export function Transactions() {
           </div>
         </div>
 
-      <div className="lg:flex lg:items-start lg:gap-3">
+      <div className="lg:flex lg:items-start lg:gap-3 min-h-0 flex-1">
         <div
-          className={`flex-1 min-w-0 transition-[padding,max-width] duration-300 ${
+          className={`flex-1 min-w-0 transition-[padding,max-width] duration-300 flex flex-col overflow-hidden ${
             isEditPanelOpen && selectedTransaction ? 'lg:pr-6' : ''
           }`}
         >

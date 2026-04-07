@@ -38,11 +38,14 @@ export function parseDate(dateString: string | number | Date): string {
 
   // Try to parse as a date - JavaScript Date constructor is quite flexible
   let date: Date | null = null;
-  
-  // First, try direct Date constructor (handles ISO strings, etc.)
-  const directDate = new Date(str);
-  if (!isNaN(directDate.getTime())) {
-    date = directDate;
+
+  // Skip direct Date constructor for ISO format dates to avoid timezone issues
+  // ISO dates like "2026-04-02" get parsed as UTC, but we want local date
+  if (!/^\d{4}-\d{1,2}-\d{1,2}$/.test(str)) {
+    const directDate = new Date(str);
+    if (!isNaN(directDate.getTime())) {
+      date = directDate;
+    }
   }
   
   // If that didn't work, try common patterns
@@ -65,6 +68,7 @@ export function parseDate(dateString: string | number | Date): string {
     const isoMatch = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
     if (isoMatch) {
       const [, year, month, day] = isoMatch;
+      // Use local date constructor to avoid timezone issues
       date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
     }
   }
