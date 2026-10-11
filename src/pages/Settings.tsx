@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   updateProfile,
@@ -33,8 +33,11 @@ import {
 import { useAuth } from '@/hooks/useAuth';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { useTransactions } from '@/hooks/useTransactions';
+import { useRules } from '@/hooks/useRules';
+import { useCategoryMappings } from '@/hooks/useCategoryMappings';
 import { useBankAccounts, BankAccount } from '@/hooks/useBankAccounts';
 import { useTellerConnect, TellerAuthorization } from '@/hooks/useTellerConnect';
+import { categorize } from '@/lib/categorization';
 import { db } from '@/lib/firebase';
 
 const CURRENCY_OPTIONS = [
@@ -46,11 +49,8 @@ const CURRENCY_OPTIONS = [
   { value: 'JPY', label: 'JPY (¥)' },
 ];
 
-const DATE_FORMAT_OPTIONS = [
-  { value: 'MM/DD/YY', label: 'MM/DD/YY' },
-  { value: 'DD/MM/YY', label: 'DD/MM/YY' },
-  { value: 'YY/MM/DD', label: 'YY/MM/DD' },
-];
+// Keep in step with the signup rules in Login.tsx.
+const MIN_PASSWORD_LENGTH = 8;
 
 function Message({
   message,
@@ -76,12 +76,19 @@ function Message({
 
 export function Settings() {
   const { user } = useAuth();
-  const { settings, loading: settingsLoading, updateSettings } = useUserSettings(user?.uid ?? null);
+  const { settings, loading: settingsLoading, updateSettings } = useUserSettings();
   const navigate = useNavigate();
+
+  // Transient "saved" messages must not outlive the component.
+  const messageTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(() => () => messageTimers.current.forEach(clearTimeout), []);
+
+  const clearMessageLater = useCallback((clear: () => void) => {
+    messageTimers.current.push(setTimeout(clear, 3000));
+  }, []);
 
   // Preferences
   const [currency, setCurrency] = useState('USD');
-  const [dateFormat, setDateFormat] = useState('MM/DD/YY');
   const [preferencesSaving, setPreferencesSaving] = useState(false);
   const [preferencesMsg, setPreferencesMsg] = useState('');
   const [preferencesError, setPreferencesError] = useState(false);
@@ -102,6 +109,8 @@ export function Settings() {
 
   // Bank accounts
   const { addTransactions, deleteTransactionsByAccount } = useTransactions(user?.uid ?? null);
+  const { rules } = useRules(user?.uid ?? null);
+  const { mappings } = useCategoryMappings(user?.uid ?? null);
   const { bankAccounts, connectAccounts, syncTransactions, removeAccount } = useBankAccounts(user?.uid ?? null);
   const [syncingAccountId, setSyncingAccountId] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -126,7 +135,7 @@ export function Settings() {
     setSyncError(null);
     try {
       const newTransactions = await syncTransactions(account);
-      await addTransactions(newTransactions);
+      await addTransactions(categorize(newTransactions, rules, mappings));
     } catch {
       setSyncError(`Failed to sync ${account.name}. Please try again.`);
     } finally {
@@ -143,8 +152,7 @@ export function Settings() {
 
   useEffect(() => {
     if (settings.currency) setCurrency(settings.currency);
-    if (settings.dateFormat) setDateFormat(settings.dateFormat);
-  }, [settings.currency, settings.dateFormat]);
+  }, [settings.currency]);
 
   useEffect(() => {
     const name = user?.displayName ?? settings.displayName ?? '';
@@ -157,10 +165,10 @@ export function Settings() {
     setPreferencesMsg('');
     setPreferencesError(false);
     try {
-      await updateSettings({ currency, dateFormat });
+      await updateSettings({ currency });
       setPreferencesMsg('Preferences saved');
       setPreferencesError(false);
-      setTimeout(() => setPreferencesMsg(''), 3000);
+      clearMessageLater(() => setPreferencesMsg(''));
     } catch (err: unknown) {
       setPreferencesMsg(err instanceof Error ? err.message : 'Failed to save');
       setPreferencesError(true);
@@ -185,7 +193,7 @@ export function Settings() {
       await updateSettings({ displayName: trimmed });
       setProfileMsg('Profile saved');
       setProfileError(false);
-      setTimeout(() => setProfileMsg(''), 3000);
+      clearMessageLater(() => setProfileMsg(''));
     } catch (err: unknown) {
       setProfileMsg(err instanceof Error ? err.message : 'Failed to save');
       setProfileError(true);
@@ -206,8 +214,8 @@ export function Settings() {
       setPasswordError(true);
       return;
     }
-    if (newPassword.length < 6) {
-      setPasswordMsg('Password must be at least 6 characters');
+    if (newPassword.length < MIN_PASSWORD_LENGTH) {
+      setPasswordMsg(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
       setPasswordError(true);
       return;
     }
@@ -223,7 +231,7 @@ export function Settings() {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-      setTimeout(() => setPasswordMsg(''), 3000);
+      clearMessageLater(() => setPasswordMsg(''));
     } catch (err: unknown) {
       const message = err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'auth/wrong-password'
         ? 'Current password is incorrect'
@@ -361,7 +369,7 @@ export function Settings() {
         <Card>
           <CardHeader>
             <CardTitle>Preferences</CardTitle>
-            <CardDescription>Currency and date format for your budget.</CardDescription>
+            <CardDescription>Currency used to display amounts.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -372,21 +380,6 @@ export function Settings() {
                 </SelectTrigger>
                 <SelectContent>
                   {CURRENCY_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="dateFormat">Date Format</Label>
-              <Select value={dateFormat} onValueChange={setDateFormat}>
-                <SelectTrigger id="dateFormat">
-                  <SelectValue placeholder="Select format" />
-                </SelectTrigger>
-                <SelectContent>
-                  {DATE_FORMAT_OPTIONS.map((opt) => (
                     <SelectItem key={opt.value} value={opt.value}>
                       {opt.label}
                     </SelectItem>

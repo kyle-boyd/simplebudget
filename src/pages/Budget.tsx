@@ -1,18 +1,32 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '@/components/layout/Layout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { AmountInput } from '@/components/ui/amount-input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/ui/responsive-dialog';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { useAuth } from '@/hooks/useAuth';
+import { useCurrency } from '@/hooks/useUserSettings';
 import { useCategories, Category, Subcategory } from '@/hooks/useCategories';
 import { useTransactions } from '@/hooks/useTransactions';
-import { formatCurrency } from '@/lib/utils';
+import { useRules } from '@/hooks/useRules';
+import { useCategoryMappings } from '@/hooks/useCategoryMappings';
+import {
+  referencesTo,
+  renameCategoryInTransactions,
+  transactionsUsingCategory,
+} from '@/lib/categorization';
+import {
+  ALL_MONTHS,
+  filterByMonth,
+  monthOptions,
+  parseTransactionDate,
+} from '@/lib/months';
 import { ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
 
 const SELECTED_MONTH_KEY = 'selectedMonth';
@@ -21,18 +35,18 @@ export function Budget() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { categories, addCategory, updateCategory, deleteCategory, addSubcategory, updateSubcategory, deleteSubcategory } = useCategories(user?.uid || null);
-  const { transactions } = useTransactions(user?.uid || null);
-  const [selectedMonth, setSelectedMonth] = useState(() => {
-    // Initialize from localStorage if available
-    return localStorage.getItem(SELECTED_MONTH_KEY) || 'All Months';
-  });
+  const { transactions, mutateTransactions } = useTransactions(user?.uid || null);
+  const { rules, updateRule, deleteRule } = useRules(user?.uid || null);
+  const { mappings, deleteMapping } = useCategoryMappings(user?.uid || null);
+  const { formatCurrency } = useCurrency();
+  const [selectedMonth, setSelectedMonth] = useState(
+    () => localStorage.getItem(SELECTED_MONTH_KEY) || ALL_MONTHS
+  );
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<{ category?: Category; subcategory?: Subcategory; parentId?: number } | null>(null);
-  const [formData, setFormData] = useState({ name: '', amount: '' });
-  const [editingAmounts, setEditingAmounts] = useState<{ [key: number]: string }>({});
-  const [editingCategoryAmounts, setEditingCategoryAmounts] = useState<{ [key: number]: string }>({});
+  const [formData, setFormData] = useState({ name: '' });
   const [editingNames, setEditingNames] = useState<{ [key: number]: string }>({});
-  const [modalAmountValue, setModalAmountValue] = useState<string>('');
+  const [modalAmount, setModalAmount] = useState(0);
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
   const [deletingSubcategoryId, setDeletingSubcategoryId] = useState<number | null>(null);
   const [nameError, setNameError] = useState<string>('');
@@ -43,7 +57,7 @@ export function Budget() {
     parentId?: number;
   } | null>(null);
   const [mobileSheetName, setMobileSheetName] = useState('');
-  const [mobileSheetAmount, setMobileSheetAmount] = useState('');
+  const [mobileSheetAmount, setMobileSheetAmount] = useState(0);
   const [mobileSheetDeleteConfirm, setMobileSheetDeleteConfirm] = useState(false);
 
   // Save to localStorage whenever selectedMonth changes
@@ -68,72 +82,122 @@ export function Budget() {
     }
   }, [deletingSubcategoryId]);
 
-  // Get unique months from transactions
-  const months = ['All Months', ...new Set(
-    transactions.map(t => {
-      const [month, , year] = t.Date.split('/');
-      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
-        'July', 'August', 'September', 'October', 'November', 'December'];
-      return `${monthNames[parseInt(month) - 1]}, 20${year}`;
-    })
-  )];
+  const months = useMemo(() => monthOptions(transactions), [transactions]);
 
-  // Filter transactions by selected month
-  const filteredTransactions = selectedMonth === 'All Months'
-    ? transactions
-    : transactions.filter(t => {
-        const [monthName, year] = selectedMonth.split(', ');
-        const monthIndex = ['January', 'February', 'March', 'April', 'May', 'June',
-          'July', 'August', 'September', 'October', 'November', 'December']
-          .indexOf(monthName) + 1;
-        const [tMonth, , tYear] = t.Date.split('/');
-        return parseInt(tMonth) === monthIndex && tYear === year.slice(-2);
-      });
+  // A month stored by another page may no longer have any transactions.
+  const activeMonth = months.includes(selectedMonth) ? selectedMonth : ALL_MONTHS;
 
-  // Get the last 3 months sorted descending (most recent first)
-  const lastThreeMonths = (() => {
-    const monthSet = new Set(
-      transactions.map(t => {
-        const [month, , year] = t.Date.split('/');
-        return `${year.padStart(2, '0')}-${month.padStart(2, '0')}`;
-      })
-    );
-    return Array.from(monthSet).sort().reverse().slice(0, 3);
-  })();
+  const filteredTransactions = useMemo(
+    () => filterByMonth(transactions, activeMonth),
+    [transactions, activeMonth]
+  );
 
-  // Calculate spending for a subcategory
-  const getSubcategorySpending = (subcategoryName: string): number => {
-    if (selectedMonth !== 'All Months') {
-      return filteredTransactions
-        .filter(t => t.Category?.trim() === subcategoryName.trim())
-        .reduce((sum, t) => sum + Math.abs(t.Amount), 0);
+  /**
+   * Spend per subcategory. For a specific month that's the month's total; for
+   * "All Months" it's the average over the three most recent months that have
+   * transactions, so it stays comparable to the monthly budget beside it.
+   */
+  const spendingBySubcategory = useMemo(() => {
+    const totals = new Map<string, number>();
+
+    const add = (name: string | undefined, amount: number, divisor: number) => {
+      const key = name?.trim();
+      if (!key || !Number.isFinite(amount)) return;
+      totals.set(key, (totals.get(key) || 0) + Math.abs(amount) / divisor);
+    };
+
+    if (activeMonth !== ALL_MONTHS) {
+      for (const transaction of filteredTransactions) {
+        add(transaction.Category, transaction.Amount, 1);
+      }
+      return totals;
     }
-    // Average of last 3 months
-    if (lastThreeMonths.length === 0) return 0;
-    const total = lastThreeMonths.reduce((sum, ym) => {
-      const [yr, mo] = ym.split('-');
-      const monthTotal = transactions
-        .filter(t => {
-          const [tMonth, , tYear] = t.Date.split('/');
-          return tMonth.padStart(2, '0') === mo && tYear.padStart(2, '0') === yr && t.Category?.trim() === subcategoryName.trim();
-        })
-        .reduce((s, t) => s + Math.abs(t.Amount), 0);
-      return sum + monthTotal;
-    }, 0);
-    return total / lastThreeMonths.length;
-  };
 
-  // Calculate spending for a category (sum of all subcategories)
-  const getCategorySpending = (category: Category): number => {
-    return (category.subcategories || []).reduce((sum, sub) => {
-      return sum + getSubcategorySpending(sub.name);
-    }, 0);
-  };
+    // The three most recent months (as year * 12 + month) that have transactions.
+    const monthsPresent = new Set<number>();
+    for (const transaction of transactions) {
+      const date = parseTransactionDate(transaction.Date);
+      if (date) monthsPresent.add(date.getFullYear() * 12 + date.getMonth());
+    }
+
+    const recentMonths = new Set([...monthsPresent].sort((a, b) => b - a).slice(0, 3));
+    if (recentMonths.size === 0) return totals;
+
+    for (const transaction of transactions) {
+      const date = parseTransactionDate(transaction.Date);
+      if (!date || !recentMonths.has(date.getFullYear() * 12 + date.getMonth())) continue;
+      add(transaction.Category, transaction.Amount, recentMonths.size);
+    }
+
+    return totals;
+  }, [activeMonth, filteredTransactions, transactions]);
+
+  const getSubcategorySpending = useCallback(
+    (subcategoryName: string): number => spendingBySubcategory.get(subcategoryName.trim()) || 0,
+    [spendingBySubcategory]
+  );
+
+  const getCategorySpending = useCallback(
+    (category: Category): number =>
+      (category.subcategories || []).reduce(
+        (sum, sub) => sum + getSubcategorySpending(sub.name),
+        0
+      ),
+    [getSubcategorySpending]
+  );
+
+  /**
+   * Transactions, rules and mappings all reference categories by *name*, so a
+   * rename has to be propagated or every transaction filed under the old name is
+   * orphaned: it renders as an invalid category and drops out of the budget.
+   */
+  const cascadeRename = useCallback(async (oldName: string, newName: string) => {
+    if (!oldName || oldName.trim() === newName.trim()) return;
+
+    await mutateTransactions(current =>
+      renameCategoryInTransactions(current, oldName, newName)
+    );
+
+    const stale = referencesTo([oldName], rules, mappings);
+    await Promise.all(stale.rules.map(rule => updateRule(rule.id, { category: newName })));
+    await Promise.all(stale.mappings.map(imported => deleteMapping(imported)));
+  }, [rules, mappings, mutateTransactions, updateRule, deleteMapping]);
+
+  /**
+   * Un-files transactions whose category is gone and drops rules and mappings
+   * that pointed at it. Takes every removed name at once: a per-name loop would
+   * write the whole transaction list repeatedly and lose the earlier passes.
+   */
+  const cascadeDelete = useCallback(async (names: string[]) => {
+    const targets = new Set(
+      names.map(name => name.trim().toLowerCase()).filter(Boolean)
+    );
+    if (targets.size === 0) return;
+
+    await mutateTransactions(current =>
+      current.map(transaction =>
+        targets.has((transaction.Category || '').trim().toLowerCase())
+          ? { ...transaction, Category: '', confirmed: false }
+          : transaction
+      )
+    );
+
+    const stale = referencesTo(names, rules, mappings);
+    await Promise.all(stale.rules.map(rule => deleteRule(rule.id)));
+    await Promise.all(stale.mappings.map(imported => deleteMapping(imported)));
+  }, [rules, mappings, mutateTransactions, deleteRule, deleteMapping]);
+
+  /** How many transactions a delete would un-file, for the confirmation prompt. */
+  const countAffected = useCallback(
+    (names: string[]) =>
+      names.reduce((sum, name) => sum + transactionsUsingCategory(transactions, name).length, 0),
+    [transactions]
+  );
 
   const handleAddCategory = () => {
     setEditingCategory(null);
-    setFormData({ name: '', amount: '' });
-    setModalAmountValue('$0');
+    setFormData({ name: '' });
+    setModalAmount(0);
     setShowDeleteConfirmation(false);
     setNameError('');
     setIsModalOpen(true);
@@ -142,48 +206,17 @@ export function Budget() {
   const handleEditCategory = (category: Category) => {
     if (category.isSystem) return;
     setEditingCategory({ category });
-    setFormData({ name: category.name, amount: '' });
-    setModalAmountValue('$0');
+    setFormData({ name: category.name });
+    setModalAmount(0);
     setShowDeleteConfirmation(false);
     setNameError('');
     setIsModalOpen(true);
   };
 
-  const handleEditSubcategory = (subcategory: Subcategory, parentId: number) => {
+  const handleEditSubcategory = (subcategory: Subcategory) => {
     if (subcategory.isSystem) return;
     // Put the name in edit mode
     setEditingNames({ ...editingNames, [subcategory.id]: subcategory.name });
-  };
-
-  const handleAmountChange = (subcategory: Subcategory, parentId: number, newAmount: string) => {
-    // Remove $ and commas, then parse
-    const cleanedValue = newAmount.replace(/[$,]/g, '');
-    const amount = parseFloat(cleanedValue) || 0;
-    updateSubcategory(parentId, subcategory.id, {
-      name: subcategory.name,
-      amount: amount,
-    });
-  };
-
-  const formatAmountForInput = (amount: number | undefined): string => {
-    if (amount === undefined || amount === null) return '$0';
-    // Only show decimals if the amount has decimal places
-    if (amount % 1 === 0) {
-      return `$${amount.toFixed(0)}`;
-    }
-    return `$${amount.toFixed(2)}`;
-  };
-
-  const getInputValue = (sub: Subcategory): string => {
-    if (editingAmounts[sub.id] !== undefined) {
-      // Ensure $ is always present while editing
-      const value = editingAmounts[sub.id];
-      if (value.startsWith('$')) {
-        return value;
-      }
-      return `$${value}`;
-    }
-    return formatAmountForInput(sub.amount);
   };
 
   const handleAddSubcategory = (parentId: number) => {
@@ -197,11 +230,11 @@ export function Budget() {
     setEditingNames({ ...editingNames, [newSubcategory.id]: '' });
   };
 
-  const handleNameChange = (subcategoryId: number, parentId: number, newName: string) => {
+  const handleNameChange = (subcategoryId: number, newName: string) => {
     setEditingNames({ ...editingNames, [subcategoryId]: newName });
   };
 
-  const handleNameBlur = (subcategoryId: number, parentId: number) => {
+  const handleNameBlur = async (subcategoryId: number, parentId: number) => {
     const nameValue = editingNames[subcategoryId] || '';
     const trimmedName = nameValue.trim();
 
@@ -246,10 +279,11 @@ export function Budget() {
     }
 
     // Update the subcategory name
-    updateSubcategory(parentId, subcategoryId, {
+    await updateSubcategory(parentId, subcategoryId, {
       name: trimmedName,
       amount: subcategory.amount || 0,
     });
+    await cascadeRename(subcategory.name, trimmedName);
 
     // Clear editing state
     const newEditingNames = { ...editingNames };
@@ -259,7 +293,7 @@ export function Budget() {
 
   const handleNameKeyDown = (e: React.KeyboardEvent, subcategoryId: number, parentId: number) => {
     if (e.key === 'Enter') {
-      e.currentTarget.blur();
+      (e.currentTarget as HTMLInputElement).blur();
     } else if (e.key === 'Escape') {
       const category = categories.find(c => c.id === parentId);
       const subcategory = (category?.subcategories || []).find(s => s.id === subcategoryId);
@@ -275,98 +309,48 @@ export function Budget() {
     }
   };
 
-  const handleSave = () => {
-    if (!formData.name.trim()) return;
-
+  const handleSave = async () => {
     const trimmedName = formData.name.trim();
-    let hasDuplicate = false;
+    if (!trimmedName) return;
 
-    // Check for duplicate category names across all categories
-    const duplicateCategory = categories.find(
-      c => {
-        if (editingCategory?.category) {
-          return c.id !== editingCategory.category.id && 
-                 c.name.trim().toLowerCase() === trimmedName.toLowerCase();
-        }
-        return c.name.trim().toLowerCase() === trimmedName.toLowerCase();
-      }
-    );
+    const lowered = trimmedName.toLowerCase();
+    const editedCategoryId = editingCategory?.category?.id;
+    const editedSubcategoryId = editingCategory?.subcategory?.id;
 
-    // Check for duplicate subcategory names across ALL categories
-    const duplicateSubcategory = categories.some(c =>
-      (c.subcategories || []).some(s => {
-        if (editingCategory?.subcategory && editingCategory.parentId) {
-          return s.id !== editingCategory.subcategory.id && 
-                 s.name.trim().toLowerCase() === trimmedName.toLowerCase();
-        }
-        return s.name.trim().toLowerCase() === trimmedName.toLowerCase();
-      })
-    );
-
-    if (editingCategory?.category) {
-      // Editing a category - check if name conflicts with any category or subcategory
-      if (duplicateCategory) {
-        setNameError('A category with this name already exists');
-        hasDuplicate = true;
-      } else if (duplicateSubcategory) {
-        setNameError('A subcategory with this name already exists');
-        hasDuplicate = true;
-      }
-    } else if (editingCategory?.subcategory && editingCategory.parentId) {
-      // Editing a subcategory - check if name conflicts with any category or subcategory
-      if (duplicateCategory) {
-        setNameError('A category with this name already exists');
-        hasDuplicate = true;
-      } else if (duplicateSubcategory) {
-        setNameError('A subcategory with this name already exists');
-        hasDuplicate = true;
-      }
-    } else if (editingCategory?.parentId) {
-      // Adding a new subcategory - check if name conflicts with any category or subcategory
-      if (duplicateCategory) {
-        setNameError('A category with this name already exists');
-        hasDuplicate = true;
-      } else if (duplicateSubcategory) {
-        setNameError('A subcategory with this name already exists');
-        hasDuplicate = true;
-      }
-    } else {
-      // Adding a new category - check if name conflicts with any category or subcategory
-      if (duplicateCategory) {
-        setNameError('A category with this name already exists');
-        hasDuplicate = true;
-      } else if (duplicateSubcategory) {
-        setNameError('A subcategory with this name already exists');
-        hasDuplicate = true;
-      }
+    // Names are the identity used by transactions and rules, so they have to be
+    // unique across both categories and subcategories.
+    if (categories.some(c => c.id !== editedCategoryId && c.name.trim().toLowerCase() === lowered)) {
+      setNameError('A category with this name already exists');
+      return;
     }
-
-    if (hasDuplicate) {
+    if (categories.some(c =>
+      (c.subcategories || []).some(sub =>
+        sub.id !== editedSubcategoryId && sub.name.trim().toLowerCase() === lowered
+      )
+    )) {
+      setNameError('A subcategory with this name already exists');
       return;
     }
 
-    // Clear any previous errors
     setNameError('');
 
     if (editingCategory?.category) {
-      // Update parent category
-      updateCategory(editingCategory.category.id, { name: trimmedName });
+      await updateCategory(editingCategory.category.id, { name: trimmedName });
+      await cascadeRename(editingCategory.category.name, trimmedName);
     } else if (editingCategory?.subcategory && editingCategory.parentId) {
-      // Update subcategory
-      updateSubcategory(editingCategory.parentId, editingCategory.subcategory.id, {
+      await updateSubcategory(editingCategory.parentId, editingCategory.subcategory.id, {
         name: trimmedName,
-        amount: parseFloat(formData.amount) || 0,
+        amount: modalAmount,
       });
+      await cascadeRename(editingCategory.subcategory.name, trimmedName);
     } else if (editingCategory?.parentId) {
-      // Add new subcategory
-      addSubcategory(editingCategory.parentId, {
+      await addSubcategory(editingCategory.parentId, {
         id: Date.now(),
         name: trimmedName,
-        amount: parseFloat(formData.amount) || 0,
+        amount: modalAmount,
       });
     } else {
-      // Add new parent category
-      addCategory({
+      await addCategory({
         id: Date.now(),
         name: trimmedName,
         subcategories: [],
@@ -375,8 +359,8 @@ export function Budget() {
 
     setIsModalOpen(false);
     setEditingCategory(null);
-    setFormData({ name: '', amount: '' });
-    setModalAmountValue('$0');
+    setFormData({ name: '' });
+    setModalAmount(0);
     setShowDeleteConfirmation(false);
     setNameError('');
   };
@@ -389,61 +373,100 @@ export function Budget() {
     setShowDeleteConfirmation(false);
   };
 
-  const handleDeleteConfirm = () => {
+  const handleDeleteConfirm = async () => {
     if (!editingCategory) return;
 
     if (editingCategory.category) {
-      deleteCategory(editingCategory.category.id);
+      const names = [
+        editingCategory.category.name,
+        ...(editingCategory.category.subcategories || []).map(sub => sub.name),
+      ];
+      await deleteCategory(editingCategory.category.id);
+      await cascadeDelete(names);
     } else if (editingCategory.subcategory && editingCategory.parentId) {
-      deleteSubcategory(editingCategory.parentId, editingCategory.subcategory.id);
+      const { name } = editingCategory.subcategory;
+      await deleteSubcategory(editingCategory.parentId, editingCategory.subcategory.id);
+      await cascadeDelete([name]);
     }
 
     setIsModalOpen(false);
     setEditingCategory(null);
-    setFormData({ name: '', amount: '' });
-    setModalAmountValue('$0');
+    setFormData({ name: '' });
+    setModalAmount(0);
     setShowDeleteConfirmation(false);
   };
 
   const openMobileSubSheet = (sub: Subcategory, parentId: number) => {
     setMobileSheet({ type: 'subcategory', sub, parentId });
     setMobileSheetName(sub.name);
-    setMobileSheetAmount(formatAmountForInput(sub.amount));
+    setMobileSheetAmount(sub.amount || 0);
     setMobileSheetDeleteConfirm(false);
   };
 
   const openMobileCatSheet = (category: Category) => {
     setMobileSheet({ type: 'category', category });
     setMobileSheetName(category.name);
-    setMobileSheetAmount(formatAmountForInput(category.amount));
+    setMobileSheetAmount(category.amount || 0);
     setMobileSheetDeleteConfirm(false);
   };
 
-  const handleMobileSheetSave = () => {
+  const handleMobileSheetSave = async () => {
     if (!mobileSheet) return;
     const trimmedName = mobileSheetName.trim();
     if (!trimmedName) return;
-    const cleanedAmount = mobileSheetAmount.replace(/[$,]/g, '');
-    const amount = parseFloat(cleanedAmount) || 0;
+
     if (mobileSheet.type === 'subcategory' && mobileSheet.sub && mobileSheet.parentId) {
-      updateSubcategory(mobileSheet.parentId, mobileSheet.sub.id, { name: trimmedName, amount });
+      const previousName = mobileSheet.sub.name;
+      await updateSubcategory(mobileSheet.parentId, mobileSheet.sub.id, {
+        name: trimmedName,
+        amount: mobileSheetAmount,
+      });
+      await cascadeRename(previousName, trimmedName);
     } else if (mobileSheet.type === 'category' && mobileSheet.category) {
-      updateCategory(mobileSheet.category.id, { name: trimmedName, amount });
+      const previousName = mobileSheet.category.name;
+      const hasSubcategories = (mobileSheet.category.subcategories || []).length > 0;
+      await updateCategory(mobileSheet.category.id, {
+        name: trimmedName,
+        // A parent with subcategories derives its budget from them.
+        ...(hasSubcategories ? {} : { amount: mobileSheetAmount }),
+      });
+      await cascadeRename(previousName, trimmedName);
     }
+
     setMobileSheet(null);
     setMobileSheetDeleteConfirm(false);
   };
 
-  const handleMobileSheetDelete = () => {
+  const handleMobileSheetDelete = async () => {
     if (!mobileSheet) return;
+
     if (mobileSheet.type === 'subcategory' && mobileSheet.sub && mobileSheet.parentId) {
-      deleteSubcategory(mobileSheet.parentId, mobileSheet.sub.id);
+      const { name } = mobileSheet.sub;
+      await deleteSubcategory(mobileSheet.parentId, mobileSheet.sub.id);
+      await cascadeDelete([name]);
     } else if (mobileSheet.type === 'category' && mobileSheet.category) {
-      deleteCategory(mobileSheet.category.id);
+      const names = [
+        mobileSheet.category.name,
+        ...(mobileSheet.category.subcategories || []).map(sub => sub.name),
+      ];
+      await deleteCategory(mobileSheet.category.id);
+      await cascadeDelete(names);
     }
+
     setMobileSheet(null);
     setMobileSheetDeleteConfirm(false);
   };
+
+  const mobileSheetAffectedCount = mobileSheet
+    ? countAffected(
+        mobileSheet.type === 'subcategory'
+          ? [mobileSheet.sub?.name ?? '']
+          : [
+              mobileSheet.category?.name ?? '',
+              ...(mobileSheet.category?.subcategories || []).map(sub => sub.name),
+            ]
+      )
+    : 0;
 
   const regularCategories = categories.filter(cat => !cat.isSystem);
   const systemCategory = categories.find(cat => cat.isSystem);
@@ -454,7 +477,7 @@ export function Budget() {
         <div className="sticky top-0 lg:top-0 z-10 h-auto lg:h-16 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 lg:gap-0 bg-background border-b -mx-4 lg:-mx-6 px-4 lg:px-6 py-4 lg:py-0">
           <h1 className="font-medium">Budget</h1>
           <div className="flex flex-col lg:flex-row gap-4 w-full lg:w-auto">
-            <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+            <Select value={activeMonth} onValueChange={setSelectedMonth}>
               <SelectTrigger className="w-full lg:w-[180px]">
                 <SelectValue placeholder="Select month" />
               </SelectTrigger>
@@ -527,37 +550,9 @@ export function Budget() {
                           {hasSubcategories ? (
                             <div className="font-semibold">{formatCurrency(totalAmount)}</div>
                           ) : (
-                            <Input
-                              type="text"
-                              value={
-                                editingCategoryAmounts[category.id] !== undefined
-                                  ? editingCategoryAmounts[category.id]
-                                  : formatAmountForInput(category.amount)
-                              }
-                              onChange={(e) => {
-                                let value = e.target.value;
-                                if (!value.startsWith('$')) {
-                                  if (value === '' || /^\d/.test(value)) {
-                                    value = '$' + value;
-                                  }
-                                }
-                                setEditingCategoryAmounts({ ...editingCategoryAmounts, [category.id]: value });
-                              }}
-                              onBlur={(e) => {
-                                const cleanedValue = e.target.value.replace(/[$,]/g, '');
-                                const amount = parseFloat(cleanedValue) || 0;
-                                updateCategory(category.id, { amount });
-                                const newEditing = { ...editingCategoryAmounts };
-                                delete newEditing[category.id];
-                                setEditingCategoryAmounts(newEditing);
-                              }}
-                              onFocus={() => {
-                                const amount = category.amount || 0;
-                                setEditingCategoryAmounts({
-                                  ...editingCategoryAmounts,
-                                  [category.id]: amount % 1 === 0 ? `$${amount.toFixed(0)}` : `$${amount.toFixed(2)}`,
-                                });
-                              }}
+                            <AmountInput
+                              value={category.amount}
+                              onCommit={(amount) => updateCategory(category.id, { amount })}
                               className="h-8 w-[80px] lg:w-[120px] text-right font-semibold"
                             />
                           )}
@@ -623,7 +618,7 @@ export function Budget() {
                                 <Input
                                   type="text"
                                   value={displayName}
-                                  onChange={(e) => handleNameChange(sub.id, category.id, e.target.value)}
+                                  onChange={(e) => handleNameChange(sub.id, e.target.value)}
                                   onBlur={() => handleNameBlur(sub.id, category.id)}
                                   onKeyDown={(e) => handleNameKeyDown(e, sub.id, category.id)}
                                   className="h-8 flex-1 max-w-[200px]"
@@ -651,7 +646,7 @@ export function Budget() {
                                       size="sm"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        handleEditSubcategory(sub, category.id);
+                                        handleEditSubcategory(sub);
                                       }}
                                       className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
                                     >
@@ -663,42 +658,11 @@ export function Budget() {
                             </div>
                             <div className="flex items-center gap-3 lg:gap-16">
                               <div className="text-right">
-                                <Input
-                                  type="text"
-                                  value={getInputValue(sub)}
-                                  onChange={(e) => {
-                                    let value = e.target.value;
-                                    // Ensure $ is always present
-                                    if (!value.startsWith('$')) {
-                                      // If user deleted $, add it back
-                                      if (value === '' || /^\d/.test(value)) {
-                                        value = '$' + value;
-                                      }
-                                    }
-                                    // Store input while typing
-                                    setEditingAmounts({ ...editingAmounts, [sub.id]: value });
-                                  }}
-                                  onBlur={(e) => {
-                                    const cleanedValue = e.target.value.replace(/[$,]/g, '');
-                                    const amount = parseFloat(cleanedValue) || 0;
-                                    updateSubcategory(category.id, sub.id, {
-                                      name: sub.name,
-                                      amount: amount,
-                                    });
-                                    // Clear editing state and show formatted value
-                                    const newEditingAmounts = { ...editingAmounts };
-                                    delete newEditingAmounts[sub.id];
-                                    setEditingAmounts(newEditingAmounts);
-                                  }}
-                                  onFocus={(e) => {
-                                    // Show formatted value with $ when focused
-                                    const amount = sub.amount || 0;
-                                    if (amount % 1 === 0) {
-                                      setEditingAmounts({ ...editingAmounts, [sub.id]: `$${amount.toFixed(0)}` });
-                                    } else {
-                                      setEditingAmounts({ ...editingAmounts, [sub.id]: `$${amount.toFixed(2)}` });
-                                    }
-                                  }}
+                                <AmountInput
+                                  value={sub.amount}
+                                  onCommit={(amount) =>
+                                    updateSubcategory(category.id, sub.id, { name: sub.name, amount })
+                                  }
                                   className="h-8 w-[80px] lg:w-[120px] text-right"
                                 />
                               </div>
@@ -711,7 +675,16 @@ export function Budget() {
                                 <div className="relative flex items-center">
                                   {deletingSubcategoryId === sub.id ? (
                                     <div className="delete-confirmation-popover absolute right-full mr-2 bg-popover border rounded-md shadow-lg p-3 flex items-center gap-3 whitespace-nowrap z-10">
-                                      <span className="text-sm">Are you sure?</span>
+                                      <span className="text-sm">
+                                        Are you sure?
+                                        {countAffected([sub.name]) > 0 && (
+                                          <span className="text-muted-foreground">
+                                            {' '}
+                                            {countAffected([sub.name])} transaction
+                                            {countAffected([sub.name]) === 1 ? '' : 's'} affected
+                                          </span>
+                                        )}
+                                      </span>
                                       <Button
                                         variant="outline"
                                         size="sm"
@@ -723,8 +696,9 @@ export function Budget() {
                                       <Button
                                         variant="destructive"
                                         size="sm"
-                                        onClick={() => {
-                                          deleteSubcategory(category.id, sub.id);
+                                        onClick={async () => {
+                                          await deleteSubcategory(category.id, sub.id);
+                                          await cascadeDelete([sub.name]);
                                           setDeletingSubcategoryId(null);
                                         }}
                                         className="h-8 px-3 text-sm"
@@ -801,7 +775,7 @@ export function Budget() {
                           <Input
                             type="text"
                             value={displayName}
-                            onChange={(e) => handleNameChange(sub.id, systemCategory.id, e.target.value)}
+                            onChange={(e) => handleNameChange(sub.id, e.target.value)}
                             onBlur={() => handleNameBlur(sub.id, systemCategory.id)}
                             onKeyDown={(e) => handleNameKeyDown(e, sub.id, systemCategory.id)}
                             className="h-8 flex-1 max-w-[200px]"
@@ -817,7 +791,7 @@ export function Budget() {
                                 size="sm"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleEditSubcategory(sub, systemCategory.id);
+                                  handleEditSubcategory(sub);
                                 }}
                                 className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
                               >
@@ -843,8 +817,9 @@ export function Budget() {
                               <Button
                                 variant="destructive"
                                 size="sm"
-                                onClick={() => {
-                                  deleteSubcategory(systemCategory.id, sub.id);
+                                onClick={async () => {
+                                  await deleteSubcategory(systemCategory.id, sub.id);
+                                  await cascadeDelete([sub.name]);
                                   setDeletingSubcategoryId(null);
                                 }}
                                 className="h-8 px-3 text-sm"
@@ -916,45 +891,11 @@ export function Budget() {
               {(editingCategory?.subcategory || editingCategory?.parentId) && (
                 <div className="space-y-2">
                   <Label htmlFor="amount">Amount</Label>
-                  <Input
+                  <AmountInput
                     id="amount"
-                    type="text"
-                    value={modalAmountValue}
-                    onChange={(e) => {
-                      let value = e.target.value;
-                      // Ensure $ is always present
-                      if (!value.startsWith('$')) {
-                        // If user deleted $, add it back
-                        if (value === '' || /^\d/.test(value)) {
-                          value = '$' + value;
-                        }
-                      }
-                      setModalAmountValue(value);
-                      // Also update formData for saving
-                      const cleanedValue = value.replace(/[$,]/g, '');
-                      setFormData({ ...formData, amount: cleanedValue });
-                    }}
-                    onBlur={(e) => {
-                      const cleanedValue = e.target.value.replace(/[$,]/g, '');
-                      const amount = parseFloat(cleanedValue) || 0;
-                      if (amount % 1 === 0) {
-                        setModalAmountValue(`$${amount.toFixed(0)}`);
-                      } else {
-                        setModalAmountValue(`$${amount.toFixed(2)}`);
-                      }
-                    }}
-                    onFocus={(e) => {
-                      // Show formatted value with $ when focused
-                      const cleanedValue = modalAmountValue.replace(/[$,]/g, '');
-                      const amount = parseFloat(cleanedValue) || 0;
-                      if (amount % 1 === 0) {
-                        setModalAmountValue(`$${amount.toFixed(0)}`);
-                      } else {
-                        setModalAmountValue(`$${amount.toFixed(2)}`);
-                      }
-                    }}
+                    value={modalAmount}
+                    onChange={setModalAmount}
                     className="h-8 w-[120px] text-right"
-                    placeholder="$0"
                   />
                 </div>
               )}
@@ -965,7 +906,24 @@ export function Budget() {
                   {editingCategory && (editingCategory.category || editingCategory.subcategory) && (
                     showDeleteConfirmation ? (
                       <div className="flex items-center gap-2">
-                        <span className="text-sm">Are you sure?</span>
+                        <span className="text-sm">
+                          Are you sure?
+                          {(() => {
+                            const affected = countAffected(
+                              editingCategory?.category
+                                ? [
+                                    editingCategory.category.name,
+                                    ...(editingCategory.category.subcategories || []).map(sub => sub.name),
+                                  ]
+                                : [editingCategory?.subcategory?.name ?? '']
+                            );
+                            return affected > 0 ? (
+                              <span className="text-muted-foreground">
+                                {' '}{affected} transaction{affected === 1 ? '' : 's'} affected
+                              </span>
+                            ) : null;
+                          })()}
+                        </span>
                         <div className="flex gap-2">
                           <Button variant="outline" onClick={handleDeleteCancel}>
                             Cancel
@@ -1021,25 +979,10 @@ export function Budget() {
               {(mobileSheet?.type === 'subcategory' || (mobileSheet?.type === 'category' && !(mobileSheet.category?.subcategories || []).length)) && (
                 <div className="space-y-2">
                   <Label htmlFor="mobile-amount">Budget</Label>
-                  <Input
+                  <AmountInput
                     id="mobile-amount"
                     value={mobileSheetAmount}
-                    onChange={(e) => {
-                      let value = e.target.value;
-                      if (!value.startsWith('$')) value = '$' + value;
-                      setMobileSheetAmount(value);
-                    }}
-                    onFocus={() => {
-                      const cleaned = mobileSheetAmount.replace(/[$,]/g, '');
-                      const amt = parseFloat(cleaned) || 0;
-                      setMobileSheetAmount(amt % 1 === 0 ? `$${amt.toFixed(0)}` : `$${amt.toFixed(2)}`);
-                    }}
-                    onBlur={() => {
-                      const cleaned = mobileSheetAmount.replace(/[$,]/g, '');
-                      const amt = parseFloat(cleaned) || 0;
-                      setMobileSheetAmount(amt % 1 === 0 ? `$${amt.toFixed(0)}` : `$${amt.toFixed(2)}`);
-                    }}
-                    placeholder="$0"
+                    onChange={setMobileSheetAmount}
                     className="text-right w-[140px]"
                   />
                 </div>
@@ -1062,7 +1005,16 @@ export function Budget() {
             <div className="mt-6">
               {mobileSheetDeleteConfirm ? (
                 <div className="space-y-2">
-                  <p className="text-sm text-muted-foreground text-center">Are you sure you want to delete this?</p>
+                  <p className="text-sm text-muted-foreground text-center">
+                    Are you sure you want to delete this?
+                    {mobileSheetAffectedCount > 0 && (
+                      <>
+                        {' '}
+                        {mobileSheetAffectedCount} transaction
+                        {mobileSheetAffectedCount === 1 ? '' : 's'} will become uncategorized.
+                      </>
+                    )}
+                  </p>
                   <div className="flex gap-2">
                     <Button variant="outline" className="flex-1" onClick={() => setMobileSheetDeleteConfirm(false)}>
                       Cancel

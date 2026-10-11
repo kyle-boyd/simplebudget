@@ -116,9 +116,6 @@ export function useBankAccounts(userId: string | null) {
     }
 
     const tellerTransactions: TellerTransaction[] = await response.json();
-    if (tellerTransactions.length > 0) {
-      console.log('[Teller] sample transaction:', tellerTransactions[0]);
-    }
 
     const transactions: Transaction[] = tellerTransactions
       .filter((t) => t.status === 'posted')
@@ -135,12 +132,8 @@ export function useBankAccounts(userId: string | null) {
           confirmed: false,
           bankAccountId: account.id,
         };
-      });
-    console.log('[syncTransactions] Converted', transactions.length, 'transactions from', tellerTransactions.length, 'Teller transactions');
-    const claudeTransaction = transactions.find(t => t.Description.includes('CLAUDE'));
-    if (claudeTransaction) {
-      console.log('[syncTransactions] Found Claude transaction:', claudeTransaction);
-    }
+      })
+      .filter((transaction) => Number.isFinite(transaction.Amount));
 
     if (userId) {
       await update(ref(db, `users/${userId}/bankAccounts/${account.id}`), {

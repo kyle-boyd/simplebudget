@@ -5,17 +5,20 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-// Utility functions migrated from utils.js
-export function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD'
-  }).format(amount);
-}
-
-export function convertDate(dateString: string): string {
-  const [month, day, year] = dateString.split('/');
-  return `20${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+/**
+ * Prefer `useCurrency().formatCurrency` in components so the user's saved
+ * currency preference is applied; this is the unbound primitive.
+ */
+export function formatCurrency(amount: number, currency = 'USD'): string {
+  const safeAmount = Number.isFinite(amount) ? amount : 0;
+  try {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency,
+    }).format(safeAmount);
+  } catch {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(safeAmount);
+  }
 }
 
 /**
@@ -108,16 +111,29 @@ export function parseDate(dateString: string | number | Date): string {
   return `${month}/${day}/${year}`;
 }
 
-export function createTransactionId(transaction: { Date: string; Description: string; Amount: number | string }): string {
-  const idString = `${transaction.Date}-${transaction.Description}-${transaction.Amount}`;
-  
+/**
+ * Stable id derived from the transaction's content, so re-importing the same CSV
+ * doesn't duplicate rows.
+ *
+ * `occurrence` distinguishes genuinely repeated transactions (two identical $5
+ * coffees on the same day) which would otherwise collapse into a single id and
+ * be silently dropped by the import de-duplication. Occurrence 0 keeps the
+ * original id shape so previously imported transactions still de-duplicate.
+ */
+export function createTransactionId(
+  transaction: { Date: string; Description: string; Amount: number | string },
+  occurrence = 0
+): string {
+  const base = `${transaction.Date}-${transaction.Description}-${transaction.Amount}`;
+  const idString = occurrence > 0 ? `${base}-${occurrence}` : base;
+
   let hash = 0;
   for (let i = 0; i < idString.length; i++) {
     const char = idString.charCodeAt(i);
     hash = ((hash << 5) - hash) + char;
     hash = hash & hash;
   }
-  
+
   return Math.abs(hash).toString();
 }
 

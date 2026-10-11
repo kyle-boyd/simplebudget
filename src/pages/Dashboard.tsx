@@ -1,523 +1,370 @@
-import { useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { Layout } from '@/components/layout/Layout';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis } from 'recharts';
 import { useAuth } from '@/hooks/useAuth';
-import { useTransactions } from '@/hooks/useTransactions';
-import { useCategories } from '@/hooks/useCategories';
+import { useCurrency } from '@/hooks/useUserSettings';
+import { useTransactions, Transaction } from '@/hooks/useTransactions';
+import { useCategories, Category } from '@/hooks/useCategories';
+import {
+  ALL_MONTHS,
+  MONTH_NAMES,
+  filterByMonth,
+  monthOptions,
+  parseTransactionDate,
+  previousMonthLabel,
+} from '@/lib/months';
 import { TrendingUp, TrendingDown, Minus, ChevronLeft } from 'lucide-react';
 
 const SELECTED_MONTH_KEY = 'selectedMonth';
+
+const MONTH_SHORT = MONTH_NAMES.map(name => name.slice(0, 3));
+
+interface Trend {
+  direction: 'up' | 'down' | 'neutral';
+  percentage: number;
+  description: string;
+}
+
+const NEUTRAL_TREND = (description: string): Trend => ({
+  direction: 'neutral',
+  percentage: 0,
+  description,
+});
+
+/**
+ * Subcategories of a system category ("Hide from Budget") are excluded from all
+ * spending maths. Without this they fall through to their parent, which has no
+ * entry in the totals map, turning every downstream total into NaN.
+ */
+function hiddenCategoryNames(categories: Category[]): Set<string> {
+  const hidden = new Set<string>();
+  for (const category of categories) {
+    if (!category.isSystem) continue;
+    hidden.add(category.name.trim());
+    for (const sub of category.subcategories || []) {
+      hidden.add(sub.name.trim());
+    }
+  }
+  return hidden;
+}
+
+/** Spend per top-level category, with uncategorised rolled into one bucket. */
+function spendingByCategory(
+  transactions: Transaction[],
+  categories: Category[]
+): { totals: Record<string, number>; budgets: Record<string, number> } {
+  const hidden = hiddenCategoryNames(categories);
+  const budgets: Record<string, number> = {};
+  const totals: Record<string, number> = { Uncategorized: 0 };
+
+  for (const category of categories) {
+    if (category.isSystem) continue;
+    budgets[category.name] = (category.subcategories || []).length > 0
+      ? category.subcategories.reduce((sum, sub) => sum + (sub.amount || 0), 0)
+      : (category.amount || 0);
+    totals[category.name] = 0;
+  }
+
+  for (const transaction of transactions) {
+    const name = transaction.Category?.trim();
+    if (name && hidden.has(name)) continue;
+
+    const amount = Math.abs(transaction.Amount);
+    if (!Number.isFinite(amount)) continue;
+
+    if (!name) {
+      totals.Uncategorized += amount;
+      continue;
+    }
+
+    const owner = categories.find(category => category.name.trim() === name)
+      ?? categories.find(category =>
+        (category.subcategories || []).some(sub => sub.name.trim() === name)
+      );
+
+    if (owner && !owner.isSystem && owner.name in totals) {
+      totals[owner.name] += amount;
+    } else if (!owner) {
+      totals.Uncategorized += amount;
+    }
+  }
+
+  return { totals, budgets };
+}
+
+/** Splits spend vs budget into the stacked bar segments the charts render. */
+function toBarSegments<T extends object>(base: T, spent: number, budgeted: number) {
+  return spent <= budgeted
+    ? { ...base, spent, budgeted, spentBase: spent, remainingBudgeted: budgeted - spent, budgetedBase: 0, overage: 0 }
+    : { ...base, spent, budgeted, spentBase: 0, remainingBudgeted: 0, budgetedBase: budgeted, overage: spent - budgeted };
+}
+
+function percentChange(current: number, previous: number): Trend['direction'] {
+  if (current > previous) return 'up';
+  if (current < previous) return 'down';
+  return 'neutral';
+}
+
+/**
+ * A rising line is good for categorisation progress and bad for spending, so the
+ * caller says which way is better rather than every footer claiming green=up.
+ */
+function TrendFooter({ trend, higherIsBetter }: { trend: Trend; higherIsBetter: boolean }) {
+  const TrendIcon = trend.direction === 'up' ? TrendingUp : trend.direction === 'down' ? TrendingDown : Minus;
+  const isGood = trend.direction === 'neutral'
+    ? null
+    : (trend.direction === 'up') === higherIsBetter;
+  const trendColor = isGood === null
+    ? 'text-muted-foreground'
+    : isGood ? 'text-green-600' : 'text-red-600';
+
+  return (
+    <div className="flex items-center justify-between w-full gap-4">
+      <div className="flex items-center gap-2 min-w-0">
+        <TrendIcon className={`h-4 w-4 shrink-0 ${trendColor}`} />
+        <span className="font-semibold truncate">
+          {trend.direction === 'up' ? 'Trending up' : trend.direction === 'down' ? 'Trending down' : 'No change'}
+          {trend.percentage > 0 && ` by ${trend.percentage.toFixed(1)}%`}
+        </span>
+      </div>
+      <span className="text-sm text-muted-foreground text-right shrink-0">{trend.description}</span>
+    </div>
+  );
+}
 
 export function Dashboard() {
   const { user } = useAuth();
   const { transactions } = useTransactions(user?.uid || null);
   const { categories } = useCategories(user?.uid || null);
-  const [selectedMonth, setSelectedMonth] = useState(() => {
-    // Initialize from localStorage if available
-    return localStorage.getItem(SELECTED_MONTH_KEY) || 'All Months';
-  });
+  const { formatCurrency } = useCurrency();
+  const [selectedMonth, setSelectedMonth] = useState(
+    () => localStorage.getItem(SELECTED_MONTH_KEY) || ALL_MONTHS
+  );
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [budgetChartPeriod, setBudgetChartPeriod] = useState('6');
 
-  // Save to localStorage whenever selectedMonth changes
   useEffect(() => {
     localStorage.setItem(SELECTED_MONTH_KEY, selectedMonth);
   }, [selectedMonth]);
 
   const chartConfig = {
-    spent: {
-      label: "Spent",
-      color: "hsl(var(--chart-1))",
-    },
-    budgeted: {
-      label: "Budgeted",
-      color: "hsl(var(--chart-2))",
-    },
-    confirmed: {
-      label: "Confirmed",
-      color: "hsl(var(--chart-1))",
-    },
-    unconfirmed: {
-      label: "Unconfirmed",
-      color: "hsl(var(--chart-2))",
-    },
-    uncategorized: {
-      label: "Uncategorized",
-      color: "hsl(var(--chart-3))",
-    },
+    spent: { label: "Spent", color: "hsl(var(--chart-1))" },
+    budgeted: { label: "Budgeted", color: "hsl(var(--chart-2))" },
+    confirmed: { label: "Confirmed", color: "hsl(var(--chart-1))" },
+    unconfirmed: { label: "Unconfirmed", color: "hsl(var(--chart-2))" },
+    uncategorized: { label: "Uncategorized", color: "hsl(var(--chart-3))" },
   } satisfies ChartConfig;
 
-  // Get unique months from transactions
-  const months = ['All Months', ...new Set(
-    transactions.map(t => {
-      const [month, , year] = t.Date.split('/');
-      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
-        'July', 'August', 'September', 'October', 'November', 'December'];
-      return `${monthNames[parseInt(month) - 1]}, 20${year}`;
-    })
-  )];
+  const months = useMemo(() => monthOptions(transactions), [transactions]);
 
-  const filteredTransactions = selectedMonth === 'All Months'
-    ? transactions
-    : transactions.filter(t => {
-        const [monthName, year] = selectedMonth.split(', ');
-        const monthIndex = ['January', 'February', 'March', 'April', 'May', 'June',
-          'July', 'August', 'September', 'October', 'November', 'December']
-          .indexOf(monthName) + 1;
-        const [tMonth, , tYear] = t.Date.split('/');
-        return parseInt(tMonth) === monthIndex && tYear === year.slice(-2);
-      });
+  // A month saved by another page may no longer have any transactions.
+  const activeMonth = months.includes(selectedMonth) ? selectedMonth : ALL_MONTHS;
 
-  // Helper function to get date range string
-  const getDateRange = (transactions: typeof filteredTransactions) => {
-    if (transactions.length === 0) return 'No data available';
-    
-    const dates = transactions.map(t => {
-      const [month, day, year] = t.Date.split('/');
-      return new Date(2000 + parseInt(year), parseInt(month) - 1, parseInt(day));
-    }).sort((a, b) => a.getTime() - b.getTime());
-    
-    const startDate = dates[0];
-    const endDate = dates[dates.length - 1];
-    
-    const formatDate = (date: Date) => {
-      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      return `${monthNames[date.getMonth()]} ${date.getDate()}, 20${date.getFullYear() % 100}`;
-    };
-    
-    if (startDate.getTime() === endDate.getTime()) {
-      return formatDate(startDate);
-    }
-    return `${formatDate(startDate)} - ${formatDate(endDate)}`;
-  };
+  const filteredTransactions = useMemo(
+    () => filterByMonth(transactions, activeMonth),
+    [transactions, activeMonth]
+  );
 
-  // Helper function to calculate trend for yearly chart
-  const getYearlyTrend = () => {
-    if (yearlyData.length < 2) return { direction: 'neutral', percentage: 0, description: 'Insufficient data' };
-    
-    const currentMonth = new Date().getMonth();
-    const currentSpent = yearlyData[currentMonth]?.spent || 0;
-    const previousMonth = currentMonth === 0 ? 11 : currentMonth - 1;
-    const previousSpent = yearlyData[previousMonth]?.spent || 0;
-    
-    if (previousSpent === 0) return { direction: 'neutral', percentage: 0, description: 'No previous data' };
-    
-    const change = ((currentSpent - previousSpent) / previousSpent) * 100;
-    const direction = change > 0 ? 'up' : change < 0 ? 'down' : 'neutral';
-    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    
-    return {
-      direction,
-      percentage: Math.abs(change),
-      description: `Compared to ${monthNames[previousMonth]}`
-    };
-  };
-
-  // Helper function to calculate trend for categorization chart
-  const getCategorizationTrend = () => {
-    if (transactions.length === 0) return { direction: 'neutral', percentage: 0, description: 'No data available' };
-    
-    const currentConfirmed = statusData.find(s => s.name === 'Confirmed')?.value || 0;
-    const currentTotal = statusData.reduce((sum, s) => sum + s.value, 0);
-    const currentPercentage = currentTotal > 0 ? (currentConfirmed / currentTotal) * 100 : 0;
-    
-    // Get previous period data (previous month or all months before current selection)
-    let previousTransactions: typeof transactions = [];
-    if (selectedMonth === 'All Months') {
-      // For "All Months", compare with nothing (neutral)
-      return { direction: 'neutral', percentage: 0, description: 'Showing all transactions' };
-    } else {
-      // Get previous month's transactions
-      const [monthName, year] = selectedMonth.split(', ');
-      const monthIndex = ['January', 'February', 'March', 'April', 'May', 'June',
-        'July', 'August', 'September', 'October', 'November', 'December']
-        .indexOf(monthName);
-      
-      let prevMonthIndex = monthIndex - 1;
-      let prevYear = parseInt(year.slice(-2));
-      if (prevMonthIndex < 0) {
-        prevMonthIndex = 11;
-        prevYear -= 1;
-      }
-      
-      previousTransactions = transactions.filter(t => {
-        const [tMonth, , tYear] = t.Date.split('/');
-        const tMonthIndex = parseInt(tMonth) - 1;
-        return tMonthIndex === prevMonthIndex && tYear === prevYear.toString().padStart(2, '0');
-      });
-    }
-    
-    if (previousTransactions.length === 0) {
-      return { direction: 'neutral', percentage: 0, description: 'No previous period data' };
-    }
-    
-    const budgetCategoryNames = new Set<string>();
-    categories.forEach(cat => {
-      budgetCategoryNames.add(cat.name);
-      cat.subcategories.forEach(sub => budgetCategoryNames.add(sub.name));
-    });
-    
-    const prevConfirmed = previousTransactions.filter(t => 
-      t.Category && budgetCategoryNames.has(t.Category) && t.confirmed
-    ).length;
-    const prevTotal = previousTransactions.length;
-    const prevPercentage = prevTotal > 0 ? (prevConfirmed / prevTotal) * 100 : 0;
-    
-    if (prevPercentage === 0) return { direction: 'neutral', percentage: 0, description: 'No previous confirmed transactions' };
-    
-    const change = currentPercentage - prevPercentage;
-    const direction = change > 0 ? 'up' : change < 0 ? 'down' : 'neutral';
-    
-    return {
-      direction,
-      percentage: Math.abs(change),
-      description: 'Compared to previous month'
-    };
-  };
-
-  // Helper function to calculate trend for monthly spending chart
-  const getMonthlySpendingTrend = () => {
-    if (mainSpendingData.length === 0) return { direction: 'neutral', percentage: 0, description: 'No data available' };
-    
-    const currentTotal = mainSpendingData.reduce((sum, item) => sum + item.spent, 0);
-    
-    if (selectedMonth === 'All Months') {
-      return { direction: 'neutral', percentage: 0, description: 'Showing all months' };
-    }
-    
-    // Get previous month's data
-    const [monthName, year] = selectedMonth.split(', ');
-    const monthIndex = ['January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December']
-      .indexOf(monthName);
-    
-    let prevMonthIndex = monthIndex - 1;
-    let prevYear = parseInt(year.slice(-2));
-    if (prevMonthIndex < 0) {
-      prevMonthIndex = 11;
-      prevYear -= 1;
-    }
-    
-    const prevTransactions = transactions.filter(t => {
-      const [tMonth, , tYear] = t.Date.split('/');
-      const tMonthIndex = parseInt(tMonth) - 1;
-      return tMonthIndex === prevMonthIndex && tYear === prevYear.toString().padStart(2, '0');
-    });
-    
-    if (prevTransactions.length === 0) {
-      return { direction: 'neutral', percentage: 0, description: 'No previous month data' };
-    }
-    
-    // Calculate previous month's spending
-    const categoryBudgets: Record<string, number> = {};
-    categories.forEach(cat => {
-      if (cat.name !== "Hide from Budget") {
-        categoryBudgets[cat.name] = (cat.subcategories || []).length > 0
-          ? cat.subcategories.reduce((sum, sub) => sum + (sub.amount || 0), 0)
-          : (cat.amount || 0);
-      }
-    });
-    
-    const prevCategoryTotals: Record<string, number> = {};
-    Object.keys(categoryBudgets).forEach(cat => {
-      prevCategoryTotals[cat] = 0;
-    });
-    prevCategoryTotals['Uncategorized'] = 0;
-    
-    prevTransactions.forEach(transaction => {
-      const transactionCategory = transaction.Category?.trim();
-      if (transactionCategory === "Hide from Budget") return;
-      
-      if (!transactionCategory) {
-        prevCategoryTotals['Uncategorized'] += Math.abs(transaction.Amount);
-        return;
-      }
-      
-      const mainCategory = categories.find(cat => cat.name.trim() === transactionCategory);
-      if (mainCategory) {
-        prevCategoryTotals[mainCategory.name] += Math.abs(transaction.Amount);
-      } else {
-        const parentCategory = categories.find(cat =>
-          cat.subcategories.some(sub => sub.name.trim() === transactionCategory)
-        );
-        if (parentCategory) {
-          prevCategoryTotals[parentCategory.name] += Math.abs(transaction.Amount);
-        } else {
-          prevCategoryTotals['Uncategorized'] += Math.abs(transaction.Amount);
-        }
-      }
-    });
-    
-    const prevTotal = Object.values(prevCategoryTotals).reduce((sum, val) => sum + val, 0);
-    
-    if (prevTotal === 0) return { direction: 'neutral', percentage: 0, description: 'No previous spending' };
-    
-    const change = ((currentTotal - prevTotal) / prevTotal) * 100;
-    const direction = change > 0 ? 'up' : change < 0 ? 'down' : 'neutral';
-    
-    return {
-      direction,
-      percentage: Math.abs(change),
-      description: 'Compared to previous month'
-    };
-  };
+  const previousMonthTransactions = useMemo(() => {
+    const previous = previousMonthLabel(activeMonth);
+    return previous ? filterByMonth(transactions, previous) : [];
+  }, [transactions, activeMonth]);
 
   // Main spending chart data
-  const mainSpendingData = (() => {
-    const categoryBudgets: Record<string, number> = {};
-    categories.forEach(cat => {
-      if (cat.name !== "Hide from Budget") {
-        categoryBudgets[cat.name] = (cat.subcategories || []).length > 0
-          ? cat.subcategories.reduce((sum, sub) => sum + (sub.amount || 0), 0)
-          : (cat.amount || 0);
-      }
-    });
+  const mainSpendingData = useMemo(() => {
+    const { totals, budgets } = spendingByCategory(filteredTransactions, categories);
 
-    const categoryTotals: Record<string, number> = {};
-    Object.keys(categoryBudgets).forEach(cat => {
-      categoryTotals[cat] = 0;
-    });
-    categoryTotals['Uncategorized'] = 0;
-
-    filteredTransactions.forEach(transaction => {
-      const transactionCategory = transaction.Category?.trim();
-      if (transactionCategory === "Hide from Budget") return;
-
-      if (!transactionCategory) {
-        categoryTotals['Uncategorized'] += Math.abs(transaction.Amount);
-        return;
-      }
-
-      const mainCategory = categories.find(cat => cat.name.trim() === transactionCategory);
-      if (mainCategory) {
-        categoryTotals[mainCategory.name] += Math.abs(transaction.Amount);
-      } else {
-        const parentCategory = categories.find(cat =>
-          cat.subcategories.some(sub => sub.name.trim() === transactionCategory)
-        );
-        if (parentCategory) {
-          categoryTotals[parentCategory.name] += Math.abs(transaction.Amount);
-        } else {
-          categoryTotals['Uncategorized'] += Math.abs(transaction.Amount);
-        }
-      }
-    });
-
-    const sortedCategories = Object.entries(categoryTotals)
-      .filter(([cat]) => cat !== "Hide from Budget")
-      .sort(([, a], [, b]) => b - a)
-      .sort(([catA], [catB]) => catA === 'Uncategorized' ? 1 : catB === 'Uncategorized' ? -1 : 0);
-
-    return sortedCategories.map(([category]) => {
-      const actual = categoryTotals[category];
-      const budget = categoryBudgets[category] || 0;
-      const spent = actual;
-      const budgeted = budget;
-      
-      if (spent <= budgeted) {
-        // When spent is below budgeted: spent is base (nearest Y axis), remaining budgeted on top
-        return {
-          category,
-          spent,
-          budgeted,
-          spentBase: spent,
-          remainingBudgeted: budgeted - spent,
-          budgetedBase: 0,
-          overage: 0,
-        };
-      } else {
-        // When spent is above budgeted: budgeted is base (light red), overage on top
-        return {
-          category,
-          spent,
-          budgeted,
-          spentBase: 0,
-          remainingBudgeted: 0,
-          budgetedBase: budgeted,
-          overage: spent - budgeted,
-        };
-      }
-    });
-  })();
+    return Object.keys(totals)
+      .sort((a, b) => {
+        if (a === 'Uncategorized') return 1;
+        if (b === 'Uncategorized') return -1;
+        return totals[b] - totals[a];
+      })
+      .map(category => toBarSegments({ category }, totals[category], budgets[category] || 0));
+  }, [filteredTransactions, categories]);
 
   // Subcategory spending data (when a main category is selected)
-  const subSpendingData = (() => {
+  const subSpendingData = useMemo(() => {
     if (!selectedCategory) return [];
 
     const category = categories.find(cat => cat.name === selectedCategory);
-    if (!category || category.subcategories.length === 0) return [];
+    if (!category || (category.subcategories || []).length === 0) return [];
 
-    const subBudgets: Record<string, number> = {};
-    const subTotals: Record<string, number> = {};
-    category.subcategories.forEach(sub => {
-      subBudgets[sub.name] = sub.amount || 0;
-      subTotals[sub.name] = 0;
-    });
+    const totals: Record<string, number> = {};
+    const budgets: Record<string, number> = {};
+    for (const sub of category.subcategories) {
+      totals[sub.name] = 0;
+      budgets[sub.name] = sub.amount || 0;
+    }
 
-    filteredTransactions.forEach(transaction => {
-      const transactionCategory = transaction.Category?.trim();
-      if (!transactionCategory) return;
-      if (category.subcategories.some(sub => sub.name.trim() === transactionCategory)) {
-        subTotals[transactionCategory] = (subTotals[transactionCategory] || 0) + Math.abs(transaction.Amount);
-      }
-    });
+    for (const transaction of filteredTransactions) {
+      const name = transaction.Category?.trim();
+      if (!name || !(name in totals)) continue;
+      const amount = Math.abs(transaction.Amount);
+      if (Number.isFinite(amount)) totals[name] += amount;
+    }
 
-    return Object.entries(subTotals)
-      .sort(([, a], [, b]) => b - a)
-      .map(([subCategory]) => {
-        const spent = subTotals[subCategory];
-        const budgeted = subBudgets[subCategory] || 0;
-
-        if (spent <= budgeted) {
-          return { category: subCategory, spent, budgeted, spentBase: spent, remainingBudgeted: budgeted - spent, budgetedBase: 0, overage: 0 };
-        } else {
-          return { category: subCategory, spent, budgeted, spentBase: 0, remainingBudgeted: 0, budgetedBase: budgeted, overage: spent - budgeted };
-        }
-      });
-  })();
+    return Object.keys(totals)
+      .sort((a, b) => totals[b] - totals[a])
+      .map(name => toBarSegments({ category: name }, totals[name], budgets[name] || 0));
+  }, [selectedCategory, categories, filteredTransactions]);
 
   const displaySpendingData = selectedCategory ? subSpendingData : mainSpendingData;
 
-  // Status chart data
-  const statusData = (() => {
+  const countsByStatus = useMemo(() => {
     const budgetCategoryNames = new Set<string>();
-    categories.forEach(cat => {
-      budgetCategoryNames.add(cat.name);
-      cat.subcategories.forEach(sub => budgetCategoryNames.add(sub.name));
-    });
-
-    let confirmedCount = 0;
-    let unconfirmedCount = 0;
-    let uncategorizedCount = 0;
-
-    filteredTransactions.forEach(transaction => {
-      if (!transaction.Category || !budgetCategoryNames.has(transaction.Category)) {
-        uncategorizedCount++;
-      } else if (transaction.confirmed) {
-        confirmedCount++;
-      } else {
-        unconfirmedCount++;
-      }
-    });
-
-    return [
-      { name: 'Confirmed', value: confirmedCount },
-      { name: 'Unconfirmed', value: unconfirmedCount },
-      { name: 'Uncategorized', value: uncategorizedCount },
-    ];
-  })();
-
-  // Helper function to get months to include based on selected period
-  const getMonthsForPeriod = (months: number): number[] => {
-    const monthIndices: number[] = [];
-    for (let i = 0; i < months; i++) {
-      monthIndices.push(i);
+    for (const category of categories) {
+      budgetCategoryNames.add(category.name);
+      for (const sub of category.subcategories || []) budgetCategoryNames.add(sub.name);
     }
-    return monthIndices;
-  };
 
-  // Yearly budget chart data
-  const yearlyData = (() => {
-    const validCategories = new Set<string>();
-    categories.forEach(category => {
-      if (!category.isSystem) {
-        if ((category.subcategories || []).length === 0) {
-          validCategories.add(category.name.trim().toLowerCase());
+    const count = (source: Transaction[]) => {
+      let confirmed = 0;
+      let unconfirmed = 0;
+      let uncategorized = 0;
+
+      for (const transaction of source) {
+        if (!transaction.Category || !budgetCategoryNames.has(transaction.Category)) {
+          uncategorized++;
+        } else if (transaction.confirmed) {
+          confirmed++;
         } else {
-          category.subcategories.forEach(sub => {
-            validCategories.add(sub.name.trim().toLowerCase());
-          });
+          unconfirmed++;
         }
       }
-    });
 
-    // Get the last N months from today
+      return { confirmed, unconfirmed, uncategorized, total: source.length };
+    };
+
+    return { current: count(filteredTransactions), previous: count(previousMonthTransactions) };
+  }, [categories, filteredTransactions, previousMonthTransactions]);
+
+  const statusData = useMemo(() => [
+    { name: 'Confirmed', value: countsByStatus.current.confirmed },
+    { name: 'Unconfirmed', value: countsByStatus.current.unconfirmed },
+    { name: 'Uncategorized', value: countsByStatus.current.uncategorized },
+  ], [countsByStatus]);
+
+  // Budget vs actual over the trailing N months
+  const yearlyData = useMemo(() => {
+    const hidden = hiddenCategoryNames(categories);
+    const trackedCategories = new Set<string>();
+    let totalBudget = 0;
+
+    for (const category of categories) {
+      if (category.isSystem) continue;
+      if ((category.subcategories || []).length === 0) {
+        trackedCategories.add(category.name.trim().toLowerCase());
+        totalBudget += category.amount || 0;
+      } else {
+        for (const sub of category.subcategories) {
+          trackedCategories.add(sub.name.trim().toLowerCase());
+          totalBudget += sub.amount || 0;
+        }
+      }
+    }
+
     const today = new Date();
-    const numMonths = parseInt(budgetChartPeriod);
-    const monthsToShow: { year: number; month: number }[] = [];
+    const numMonths = parseInt(budgetChartPeriod) || 6;
+    const window: { year: number; month: number; label: string }[] = [];
 
     for (let i = numMonths - 1; i >= 0; i--) {
       const date = new Date(today.getFullYear(), today.getMonth() - i, 1);
-      monthsToShow.push({ year: date.getFullYear(), month: date.getMonth() });
+      window.push({
+        year: date.getFullYear(),
+        month: date.getMonth(),
+        label: `${MONTH_SHORT[date.getMonth()]} '${String(date.getFullYear()).slice(-2)}`,
+      });
     }
 
-    const monthlySpending: Record<string, number> = {};
-    const monthLabels: string[] = [];
+    const spendByMonth = new Map<string, number>(window.map(({ year, month }) => [`${year}-${month}`, 0]));
 
-    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    monthsToShow.forEach(({ year, month }) => {
-      const key = `${year}-${month}`;
-      monthlySpending[key] = 0;
-      const shortYear = year.toString().slice(-2);
-      monthLabels.push(`${monthNames[month]} '${shortYear}`);
-    });
+    for (const transaction of transactions) {
+      const name = transaction.Category?.trim();
+      if (!name || hidden.has(name)) continue;
+      if (!trackedCategories.has(name.toLowerCase())) continue;
 
-    transactions.forEach(transaction => {
-      if (!transaction.Category || !transaction.Date) return;
-      const transactionCategory = transaction.Category.trim().toLowerCase();
-      if (!validCategories.has(transactionCategory)) return;
+      const date = parseTransactionDate(transaction.Date);
+      if (!date) continue;
 
-      const dateParts = transaction.Date.split('/');
-      const txMonth = parseInt(dateParts[0]) - 1;
-      const txYear = 2000 + parseInt(dateParts[2]);
-      const key = `${txYear}-${txMonth}`;
+      const key = `${date.getFullYear()}-${date.getMonth()}`;
+      const running = spendByMonth.get(key);
+      if (running === undefined) continue;
 
-      if (monthlySpending.hasOwnProperty(key)) {
-        monthlySpending[key] += Math.abs(transaction.Amount);
-      }
-    });
+      const amount = Math.abs(transaction.Amount);
+      if (Number.isFinite(amount)) spendByMonth.set(key, running + amount);
+    }
 
-    let totalBudget = 0;
-    categories.forEach(category => {
-      if (!category.isSystem) {
-        if ((category.subcategories || []).length === 0) {
-          totalBudget += category.amount || 0;
-        } else {
-          category.subcategories.forEach(sub => {
-            totalBudget += sub.amount || 0;
-          });
-        }
-      }
-    });
+    return window.map(({ year, month, label }) =>
+      toBarSegments({ month: label }, spendByMonth.get(`${year}-${month}`) || 0, totalBudget)
+    );
+  }, [categories, transactions, budgetChartPeriod]);
 
-    return monthsToShow.map((_, index) => {
-      const key = `${monthsToShow[index].year}-${monthsToShow[index].month}`;
-      const spent = monthlySpending[key] || 0;
-      const budgeted = totalBudget;
+  /**
+   * Compares the last two bars of the trailing window. Indexing this array by
+   * the calendar month number instead, as it used to, reads past the end of a
+   * 3- or 6-month window and always reported "insufficient data".
+   */
+  const yearlyTrend = useMemo<Trend>(() => {
+    if (yearlyData.length < 2) return NEUTRAL_TREND('Insufficient data');
 
-      if (spent <= budgeted) {
-        return {
-          month: monthLabels[index],
-          spent,
-          budgeted,
-          spentBase: spent,
-          remainingBudgeted: budgeted - spent,
-          budgetedBase: 0,
-          overage: 0,
-        };
-      } else {
-        return {
-          month: monthLabels[index],
-          spent,
-          budgeted,
-          spentBase: 0,
-          remainingBudgeted: 0,
-          budgetedBase: budgeted,
-          overage: spent - budgeted,
-        };
-      }
-    });
-  })();
+    const current = yearlyData[yearlyData.length - 1];
+    const previous = yearlyData[yearlyData.length - 2];
+
+    if (previous.spent === 0) return NEUTRAL_TREND(`No spending in ${previous.month}`);
+
+    return {
+      direction: percentChange(current.spent, previous.spent),
+      percentage: Math.abs(((current.spent - previous.spent) / previous.spent) * 100),
+      description: `Compared to ${previous.month}`,
+    };
+  }, [yearlyData]);
+
+  const categorizationTrend = useMemo<Trend>(() => {
+    if (transactions.length === 0) return NEUTRAL_TREND('No data available');
+    if (activeMonth === ALL_MONTHS) return NEUTRAL_TREND('Showing all transactions');
+
+    const { current, previous } = countsByStatus;
+    if (previous.total === 0) return NEUTRAL_TREND('No previous period data');
+
+    const currentRate = current.total > 0 ? (current.confirmed / current.total) * 100 : 0;
+    const previousRate = (previous.confirmed / previous.total) * 100;
+    if (previousRate === 0) return NEUTRAL_TREND('No previous confirmed transactions');
+
+    return {
+      direction: percentChange(currentRate, previousRate),
+      percentage: Math.abs(currentRate - previousRate),
+      description: 'Compared to previous month',
+    };
+  }, [transactions.length, activeMonth, countsByStatus]);
+
+  const monthlySpendingTrend = useMemo<Trend>(() => {
+    if (mainSpendingData.length === 0) return NEUTRAL_TREND('No data available');
+    if (activeMonth === ALL_MONTHS) return NEUTRAL_TREND('Showing all months');
+    if (previousMonthTransactions.length === 0) return NEUTRAL_TREND('No previous month data');
+
+    const currentTotal = mainSpendingData.reduce((sum, item) => sum + item.spent, 0);
+    const { totals } = spendingByCategory(previousMonthTransactions, categories);
+    const previousTotal = Object.values(totals).reduce((sum, value) => sum + value, 0);
+
+    if (previousTotal === 0) return NEUTRAL_TREND('No previous spending');
+
+    return {
+      direction: percentChange(currentTotal, previousTotal),
+      percentage: Math.abs(((currentTotal - previousTotal) / previousTotal) * 100),
+      description: 'Compared to previous month',
+    };
+  }, [mainSpendingData, activeMonth, previousMonthTransactions, categories]);
 
   return (
     <Layout>
       <div className="flex flex-col lg:h-[calc(100vh-1.5rem-4rem-1.5rem)]">
         <div className="sticky top-0 lg:top-0 z-10 h-auto lg:h-16 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 lg:gap-0 bg-background border-b -mx-4 lg:-mx-6 px-4 lg:px-6 py-4 lg:py-0 flex-shrink-0">
           <h1 className="font-medium">Dashboard</h1>
-          <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+          <Select value={activeMonth} onValueChange={setSelectedMonth}>
             <SelectTrigger className="w-full lg:w-[180px]">
               <SelectValue placeholder="Select month" />
             </SelectTrigger>
@@ -585,14 +432,14 @@ export function Dashboard() {
                                   <div className="w-3 h-3 rounded" style={{ backgroundColor: '#f5f5f5', border: '1px solid #d1d1d1' }} />
                                   <span className="text-sm font-medium">Budgeted</span>
                                 </div>
-                                <span className="text-sm font-mono">${budgeted.toFixed(2)}</span>
+                                <span className="text-sm font-mono">{formatCurrency(budgeted)}</span>
                               </div>
                               <div className="flex items-center justify-between gap-4">
                                 <div className="flex items-center gap-2">
                                   <div className="w-3 h-3 rounded" style={{ backgroundColor: spent > budgeted ? 'hsl(0, 84%, 60%)' : 'hsl(220, 13%, 18%)' }} />
                                   <span className="text-sm font-medium">Spent</span>
                                 </div>
-                                <span className="text-sm font-mono">${spent.toFixed(2)}</span>
+                                <span className="text-sm font-mono">{formatCurrency(spent)}</span>
                               </div>
                             </div>
                           </div>
@@ -635,31 +482,14 @@ export function Dashboard() {
                 </ChartContainer>
               </CardContent>
               <CardFooter className="flex-shrink-0 border-t pt-4">
-                {(() => {
-                  const trend = getYearlyTrend();
-                  const TrendIcon = trend.direction === 'up' ? TrendingUp : trend.direction === 'down' ? TrendingDown : Minus;
-                  const trendColor = trend.direction === 'up' ? 'text-green-600' : trend.direction === 'down' ? 'text-red-600' : 'text-muted-foreground';
-                  
-                  return (
-                    <div className="flex items-center justify-between w-full">
-                      <div className="flex items-center gap-2">
-                        <TrendIcon className={`h-4 w-4 ${trendColor}`} />
-                        <span className="font-semibold">
-                          {trend.direction === 'up' ? 'Trending up' : trend.direction === 'down' ? 'Trending down' : 'No change'} 
-                          {trend.percentage > 0 && ` by ${trend.percentage.toFixed(1)}%`}
-                        </span>
-                      </div>
-                      <span className="text-sm text-muted-foreground">{trend.description}</span>
-                    </div>
-                  );
-                })()}
+                <TrendFooter trend={yearlyTrend} higherIsBetter={false} />
               </CardFooter>
             </Card>
 
             <Card className="flex flex-col md:col-span-1 shadow-none overflow-hidden">
               <CardHeader className="flex-shrink-0">
                 <CardTitle>Categorization Progress</CardTitle>
-                <CardDescription>{selectedMonth === 'All Months' ? 'All Months Average' : selectedMonth.replace(', ', ' ')}</CardDescription>
+                <CardDescription>{activeMonth === ALL_MONTHS ? 'All Months Average' : activeMonth.replace(', ', ' ')}</CardDescription>
               </CardHeader>
               <CardContent className="flex-1 lg:min-h-0 overflow-hidden">
                 <div className="relative h-[250px] lg:h-full w-full">
@@ -703,24 +533,7 @@ export function Dashboard() {
                 </div>
               </CardContent>
               <CardFooter className="flex-shrink-0 border-t pt-4">
-                {(() => {
-                  const trend = getCategorizationTrend();
-                  const TrendIcon = trend.direction === 'up' ? TrendingUp : trend.direction === 'down' ? TrendingDown : Minus;
-                  const trendColor = trend.direction === 'up' ? 'text-green-600' : trend.direction === 'down' ? 'text-red-600' : 'text-muted-foreground';
-                  
-                  return (
-                    <div className="flex items-center justify-between w-full">
-                      <div className="flex items-center gap-2">
-                        <TrendIcon className={`h-4 w-4 ${trendColor}`} />
-                        <span className="font-semibold">
-                          {trend.direction === 'up' ? 'Trending up' : trend.direction === 'down' ? 'Trending down' : 'No change'} 
-                          {trend.percentage > 0 && ` by ${trend.percentage.toFixed(1)}%`}
-                        </span>
-                      </div>
-                      <span className="text-sm text-muted-foreground">{trend.description}</span>
-                    </div>
-                  );
-                })()}
+                <TrendFooter trend={categorizationTrend} higherIsBetter />
               </CardFooter>
             </Card>
             </div>
@@ -744,7 +557,7 @@ export function Dashboard() {
                   </span>
                 )}
               </CardTitle>
-              <CardDescription>{selectedMonth === 'All Months' ? 'All Months Average' : selectedMonth.replace(', ', ' ')}</CardDescription>
+              <CardDescription>{activeMonth === ALL_MONTHS ? 'All Months Average' : activeMonth.replace(', ', ' ')}</CardDescription>
             </CardHeader>
             <CardContent className="flex-1 lg:min-h-0 overflow-hidden">
               <ChartContainer config={chartConfig} className="h-[300px] lg:h-full w-full">
@@ -789,14 +602,14 @@ export function Dashboard() {
                                 <div className="w-3 h-3 rounded" style={{ backgroundColor: '#f5f5f5', border: '1px solid #d1d1d1' }} />
                                 <span className="text-sm font-medium">Budgeted</span>
                               </div>
-                              <span className="text-sm font-mono">${budgeted.toFixed(2)}</span>
+                              <span className="text-sm font-mono">{formatCurrency(budgeted)}</span>
                             </div>
                             <div className="flex items-center justify-between gap-4">
                               <div className="flex items-center gap-2">
                                 <div className="w-3 h-3 rounded" style={{ backgroundColor: spent > budgeted ? 'hsl(0, 84%, 60%)' : 'hsl(220, 13%, 18%)' }} />
                                 <span className="text-sm font-medium">Spent</span>
                               </div>
-                              <span className="text-sm font-mono">${spent.toFixed(2)}</span>
+                              <span className="text-sm font-mono">{formatCurrency(spent)}</span>
                             </div>
                           </div>
                         </div>
@@ -837,24 +650,7 @@ export function Dashboard() {
               </ChartContainer>
             </CardContent>
             <CardFooter className="flex-shrink-0 border-t pt-4">
-              {(() => {
-                const trend = getMonthlySpendingTrend();
-                const TrendIcon = trend.direction === 'up' ? TrendingUp : trend.direction === 'down' ? TrendingDown : Minus;
-                const trendColor = trend.direction === 'up' ? 'text-green-600' : trend.direction === 'down' ? 'text-red-600' : 'text-muted-foreground';
-                
-                return (
-                  <div className="flex items-center justify-between w-full">
-                    <div className="flex items-center gap-2">
-                      <TrendIcon className={`h-4 w-4 ${trendColor}`} />
-                      <span className="font-semibold">
-                        {trend.direction === 'up' ? 'Trending up' : trend.direction === 'down' ? 'Trending down' : 'No change'} 
-                        {trend.percentage > 0 && ` by ${trend.percentage.toFixed(1)}%`}
-                      </span>
-                    </div>
-                    <span className="text-sm text-muted-foreground">{trend.description}</span>
-                  </div>
-                );
-              })()}
+              <TrendFooter trend={monthlySpendingTrend} higherIsBetter={false} />
             </CardFooter>
           </Card>
         </div>

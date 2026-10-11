@@ -77,3 +77,12 @@ node_modules/
 
 # Build output (contains sensitive config)
 dist/
+
+# macOS
+.DS_Store
+
+# Personal financial data - keep local, never commit
+*.csv
+
+# Cloud Functions build output
+functions/lib/
