@@ -60,6 +60,7 @@ export function Login() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const { login, signup } = useAuth();
   const navigate = useNavigate();
 
@@ -85,15 +86,19 @@ export function Login() {
       }
     }
 
+    setSubmitting(true);
     try {
       if (isSignup) {
-        await signup(email, password);
+        // The name was previously collected and thrown away.
+        await signup(email, password, name);
       } else {
         await login(email, password);
       }
-      navigate('/dashboard');
-    } catch (err: any) {
-      setError(err.message || 'An error occurred');
+      navigate('/dashboard', { replace: true });
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -176,8 +181,10 @@ export function Login() {
             {error && (
               <div className="text-sm text-destructive">{error}</div>
             )}
-            <Button type="submit" className="w-full">
-              {isSignup ? 'Sign Up' : 'Login'}
+            <Button type="submit" className="w-full" disabled={submitting}>
+              {submitting
+                ? (isSignup ? 'Creating account...' : 'Logging in...')
+                : (isSignup ? 'Sign Up' : 'Login')}
             </Button>
             <div className="text-center text-sm">
               {isSignup ? (

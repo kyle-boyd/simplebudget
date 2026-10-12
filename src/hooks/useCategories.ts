@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { ref, onValue, set, get } from 'firebase/database';
+import { useCallback, useRef, useState, useEffect } from 'react';
+import { ref, onValue, set } from 'firebase/database';
 import { db } from '@/lib/firebase';
 
 export interface Subcategory {
@@ -17,6 +17,17 @@ export interface Category {
   isSystem?: boolean;
 }
 
+/**
+ * Realtime Database stores arrays as index-keyed objects and hands them back as
+ * arrays only when the keys are contiguous. A list that ever lost an entry
+ * comes back as an object, so coerce before treating it as a list.
+ */
+function toArray<T>(value: unknown): T[] {
+  if (!value) return [];
+  const items = Array.isArray(value) ? value : Object.values(value as Record<string, T>);
+  return items.filter(Boolean) as T[];
+}
+
 const defaultCategories: Category[] = [
   { id: 1, name: "Hide from Budget", isSystem: true, subcategories: [{ id: 11, name: "Hide from Budget", isSystem: true, amount: 0 }] },
   { id: 2, name: "Housing", subcategories: [{ id: 21, name: "Rent/Mortgage", amount: 0 }, { id: 22, name: "Utilities", amount: 0 }, { id: 23, name: "Insurance", amount: 0 }] },
@@ -27,8 +38,11 @@ const defaultCategories: Category[] = [
 export function useCategories(userId: string | null) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const seededRef = useRef(false);
 
   useEffect(() => {
+    seededRef.current = false;
+
     if (!userId) {
       setCategories([]);
       setLoading(false);
@@ -36,21 +50,23 @@ export function useCategories(userId: string | null) {
     }
 
     const categoriesRef = ref(db, `users/${userId}/categories`);
-    
-    const unsubscribe = onValue(categoriesRef, async (snapshot) => {
+
+    const unsubscribe = onValue(categoriesRef, (snapshot) => {
       if (snapshot.exists()) {
-        const data = snapshot.val();
-        const categoriesArray = Array.isArray(data) ? data : Object.values(data);
-        // Normalize categories to ensure they all have subcategories array
-        const normalizedCategories = (categoriesArray as Category[]).map(cat => ({
-          ...cat,
-          subcategories: cat.subcategories || []
-        }));
-        setCategories(normalizedCategories);
-      } else {
-        // Initialize with default categories if none exist
-        await set(categoriesRef, defaultCategories);
+        setCategories(
+          toArray<Category>(snapshot.val())
+            .map(category => ({
+              ...category,
+              subcategories: toArray<Subcategory>(category.subcategories),
+            }))
+        );
+      } else if (!seededRef.current) {
+        // Seed the defaults once; the write echoes back through this listener.
+        seededRef.current = true;
         setCategories(defaultCategories);
+        void set(categoriesRef, defaultCategories);
+      } else {
+        setCategories([]);
       }
       setLoading(false);
     });
@@ -58,12 +74,10 @@ export function useCategories(userId: string | null) {
     return () => unsubscribe();
   }, [userId]);
 
-  const saveCategories = async (newCategories: Category[]) => {
+  const saveCategories = useCallback(async (newCategories: Category[]) => {
     if (!userId) return;
-    
-    const categoriesRef = ref(db, `users/${userId}/categories`);
-    await set(categoriesRef, newCategories);
-  };
+    await set(ref(db, `users/${userId}/categories`), newCategories);
+  }, [userId]);
 
   const addCategory = async (category: Category) => {
     await saveCategories([...categories, category]);

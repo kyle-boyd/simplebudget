@@ -11,7 +11,14 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table"
-import { Check, Undo2 } from "lucide-react"
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Undo2,
+} from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -36,13 +43,13 @@ import {
 import { cn } from "@/lib/utils"
 
 interface CategoryFilterOption {
-  id: string
+  id: string | number
   value: string
   label: string
 }
 
 interface CategoryGroup {
-  id: string
+  id: string | number
   name: string
   subcategories: CategoryFilterOption[]
 }
@@ -102,7 +109,8 @@ export function DataTable<TData, TValue>({
   externalCategoryFilter,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([])
-  const [columnOrderState, setColumnOrderState] = React.useState<string[] | undefined>(() => columnOrderProp)
+  // Tanstack treats an empty order as "use the declared order".
+  const [columnOrderState, setColumnOrderState] = React.useState<string[]>(() => columnOrderProp ?? [])
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(() => {
     // Initialize with category filter if provided
     if (initialCategoryFilter && categoryFilterKey) {
@@ -151,7 +159,7 @@ export function DataTable<TData, TValue>({
 
   // Sync column order from prop (e.g. mobile order); clear when prop is undefined
   React.useEffect(() => {
-    setColumnOrderState(columnOrderProp)
+    setColumnOrderState(columnOrderProp ?? [])
   }, [columnOrderProp])
 
   const table = useReactTable({
@@ -177,24 +185,28 @@ export function DataTable<TData, TValue>({
       sorting,
       columnFilters,
       columnVisibility: effectiveColumnVisibility,
-      ...(columnOrderState != null && { columnOrder: columnOrderState }),
+      columnOrder: columnOrderState,
       rowSelection,
       globalFilter,
     },
   })
 
-  // Update category filter when initialCategoryFilter prop changes
+  // Apply the incoming filter (e.g. ?category=Groceries) when it *changes*.
+  // Reacting to columnFilters here instead meant the user could never clear or
+  // change the filter: the effect immediately re-applied the deep-linked value.
+  const appliedInitialFilterRef = React.useRef<string | undefined>(initialCategoryFilter)
   React.useEffect(() => {
-    if (initialCategoryFilter && categoryFilterKey) {
-      const currentFilter = columnFilters.find(f => f.id === categoryFilterKey)
-      if (!currentFilter || currentFilter.value !== initialCategoryFilter) {
-        setColumnFilters(prev => {
-          const filtered = prev.filter(f => f.id !== categoryFilterKey)
-          return [...filtered, { id: categoryFilterKey, value: initialCategoryFilter }]
-        })
-      }
-    }
-  }, [initialCategoryFilter, categoryFilterKey, columnFilters])
+    if (!categoryFilterKey) return
+    if (appliedInitialFilterRef.current === initialCategoryFilter) return
+    appliedInitialFilterRef.current = initialCategoryFilter
+
+    setColumnFilters(prev => {
+      const without = prev.filter(f => f.id !== categoryFilterKey)
+      return initialCategoryFilter
+        ? [...without, { id: categoryFilterKey, value: initialCategoryFilter }]
+        : without
+    })
+  }, [initialCategoryFilter, categoryFilterKey])
 
   const categoryFilterValue = categoryFilterKey
     ? (table.getColumn(categoryFilterKey)?.getFilterValue() as string | undefined) ?? "all"
@@ -402,7 +414,7 @@ export function DataTable<TData, TValue>({
             ) : (
               <TableRow>
                 <TableCell
-                  colSpan={columns.length}
+                  colSpan={table.getVisibleFlatColumns().length || 1}
                   className="h-24 text-center"
                 >
                   No results.
@@ -449,10 +461,52 @@ export function DataTable<TData, TValue>({
             )}
           </div>
         </div>
-        <div className="flex items-center gap-6 lg:gap-8">
+        <div className="flex items-center gap-2 lg:gap-4">
           <div className="flex w-[100px] items-center justify-center text-sm font-medium">
             Page {table.getState().pagination.pageIndex + 1} of{" "}
             {table.getPageCount() || 1}
+          </div>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8 hidden sm:inline-flex"
+              onClick={() => table.setPageIndex(0)}
+              disabled={!table.getCanPreviousPage()}
+            >
+              <ChevronsLeft className="h-4 w-4" />
+              <span className="sr-only">First page</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => table.previousPage()}
+              disabled={!table.getCanPreviousPage()}
+            >
+              <ChevronLeft className="h-4 w-4" />
+              <span className="sr-only">Previous page</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => table.nextPage()}
+              disabled={!table.getCanNextPage()}
+            >
+              <ChevronRight className="h-4 w-4" />
+              <span className="sr-only">Next page</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8 hidden sm:inline-flex"
+              onClick={() => table.setPageIndex(table.getPageCount() - 1)}
+              disabled={!table.getCanNextPage()}
+            >
+              <ChevronsRight className="h-4 w-4" />
+              <span className="sr-only">Last page</span>
+            </Button>
           </div>
         </div>
       </div>

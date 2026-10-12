@@ -57,7 +57,7 @@ const ChartContainer = React.forwardRef<
           {
             ...Object.entries(config).reduce(
               (acc, [key, value]) => {
-                acc[`--color-${key}`] = value.color
+                if (value.color) acc[`--color-${key}`] = value.color
                 return acc
               },
               {} as Record<string, string>

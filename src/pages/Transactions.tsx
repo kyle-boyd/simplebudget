@@ -22,22 +22,36 @@ import { useRules, Rule } from '@/hooks/useRules';
 import { useBankAccounts, BankAccount } from '@/hooks/useBankAccounts';
 import { useTellerConnect, TellerAuthorization } from '@/hooks/useTellerConnect';
 import { useCategoryMappings } from '@/hooks/useCategoryMappings';
-import { formatCurrency, createTransactionId, parseDate, detectCategoryColumn, scoreCategoryMatch, detectDateColumn, detectAmountColumn, detectDescriptionColumn } from '@/lib/utils';
+import { useCurrency } from '@/hooks/useUserSettings';
+import { useIsMobile } from '@/hooks/useIsMobile';
+import { categorize, ruleMatches } from '@/lib/categorization';
+import {
+  ALL_MONTHS,
+  filterByMonth,
+  formatTransactionDate,
+  monthOptions,
+  parseTransactionDate,
+} from '@/lib/months';
+import { createTransactionId, parseDate, detectCategoryColumn, scoreCategoryMatch, detectDateColumn, detectAmountColumn, detectDescriptionColumn } from '@/lib/utils';
 import Papa from 'papaparse';
 
 const SELECTED_MONTH_KEY = 'selectedMonth';
+const CSV_FIELDS = ['Date', 'Amount', 'Description', 'Category'] as const;
+
+type CsvRow = Record<string, string | undefined>;
 
 export function Transactions() {
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
-  const { transactions, addTransactions, updateTransaction, saveTransactions, toggleConfirm, deleteTransactionsByAccount } = useTransactions(user?.uid || null);
+  const { transactions, addTransactions, updateTransaction, mutateTransactions, toggleConfirm, deleteTransactionsByAccount } = useTransactions(user?.uid || null);
   const { categories, addCategory } = useCategories(user?.uid || null);
   const { mappings, addMapping, deleteMapping } = useCategoryMappings(user?.uid || null);
-  const { rules, addRule, updateRule, deleteRule, findConflict } = useRules(user?.uid || null);
-  const [selectedMonth, setSelectedMonth] = useState(() => {
-    // Initialize from localStorage if available
-    return localStorage.getItem(SELECTED_MONTH_KEY) || 'All Months';
-  });
+  const { rules, loading: rulesLoading, addRule, updateRule, deleteRule, findConflict } = useRules(user?.uid || null);
+  const { formatCurrency } = useCurrency();
+  const isMobile = useIsMobile();
+  const [selectedMonth, setSelectedMonth] = useState(
+    () => localStorage.getItem(SELECTED_MONTH_KEY) || ALL_MONTHS
+  );
 
   // Get category filter from URL params
   const categoryFilterFromUrl = searchParams.get('category') || undefined;
@@ -55,8 +69,9 @@ export function Transactions() {
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvMappings, setCsvMappings] = useState<Record<string, string>>({});
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
-  const [csvPreviewData, setCsvPreviewData] = useState<any[]>([]);
-  const [isMobile, setIsMobile] = useState(false);
+  const [csvPreviewData, setCsvPreviewData] = useState<CsvRow[]>([]);
+  const [csvError, setCsvError] = useState<string | null>(null);
+  const [importSummary, setImportSummary] = useState<string | null>(null);
   const [mobileSearchValue, setMobileSearchValue] = useState('');
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [mobileCategoryFilter, setMobileCategoryFilter] = useState('all');
@@ -69,34 +84,51 @@ export function Transactions() {
 
   const { bankAccounts, loading: bankAccountsLoading, connectAccounts, syncTransactions, removeAccount } = useBankAccounts(user?.uid || null);
 
-  const formatImportedCategory = (raw: string) => {
+  const formatImportedCategory = (raw: string | undefined) => {
+    if (!raw) return '';
     const formatted = raw.replace(/_/g, ' ');
     return formatted.charAt(0).toUpperCase() + formatted.slice(1).toLowerCase();
   };
 
-  const applyMappings = (txns: Transaction[]) =>
-    txns.map(t =>
-      t.importedCategory && !t.Category && mappings[t.importedCategory]
-        ? { ...t, Category: mappings[t.importedCategory] }
-        : t
-    );
+  /**
+   * Rules and bank-category mappings are applied here, on the way in. Rules were
+   * previously only ever applied to the single transaction they were created
+   * from, so the "applies to future transactions" promise never held.
+   */
+  const applyCategorization = useCallback(
+    (txns: Transaction[]) => categorize(txns, rules, mappings),
+    [rules, mappings]
+  );
 
+  const syncAccounts = useCallback(async (accounts: BankAccount[]) => {
+    const failures: string[] = [];
+
+    for (const account of accounts) {
+      try {
+        const newTransactions = await syncTransactions(account);
+        await addTransactions(applyCategorization(newTransactions));
+      } catch {
+        failures.push(account.name);
+      }
+    }
+
+    setSyncError(
+      failures.length > 0
+        ? `Failed to sync ${failures.join(', ')}. Please try again.`
+        : null
+    );
+  }, [syncTransactions, addTransactions, applyCategorization]);
+
+  // Sync once per session, after rules and mappings have loaded so the incoming
+  // transactions actually get categorized.
   const hasSyncedOnLogin = useRef(false);
   useEffect(() => {
-    if (bankAccountsLoading || bankAccounts.length === 0 || hasSyncedOnLogin.current) return;
+    if (bankAccountsLoading || rulesLoading || bankAccounts.length === 0) return;
+    if (hasSyncedOnLogin.current) return;
     hasSyncedOnLogin.current = true;
-    const sync = async () => {
-      for (const account of bankAccounts) {
-        try {
-          const newTransactions = await syncTransactions(account);
-          await addTransactions(applyMappings(newTransactions));
-        } catch (err) {
-          console.error(`Auto-sync failed for ${account.name}:`, err);
-        }
-      }
-    };
-    sync();
-  }, [bankAccountsLoading, bankAccounts.length]);
+    void syncAccounts(bankAccounts);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bankAccountsLoading, rulesLoading, bankAccounts.length]);
 
   const handleTellerSuccess = async (authorization: TellerAuthorization) => {
     try {
@@ -111,198 +143,234 @@ export function Transactions() {
     onFailure: () => setSyncError('Bank connection failed. Please try again.'),
   });
 
-  const handleSyncAccount = async (account: Parameters<typeof syncTransactions>[0]) => {
+  const handleSyncAccount = async (account: BankAccount) => {
     setSyncingAccountId(account.id);
-    setSyncError(null);
     try {
-      const newTransactions = await syncTransactions(account);
-      await addTransactions(applyMappings(newTransactions));
-    } catch (err) {
-      setSyncError(`Failed to sync ${account.name}. Please try again.`);
+      await syncAccounts([account]);
     } finally {
       setSyncingAccountId(null);
     }
   };
-
-  useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 1024); // Tailwind lg breakpoint
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
 
   // Save to localStorage whenever selectedMonth changes
   useEffect(() => {
     localStorage.setItem(SELECTED_MONTH_KEY, selectedMonth);
   }, [selectedMonth]);
 
-  const months = ['All Months', ...new Set(
-    transactions.map(t => {
-      const [month, , year] = t.Date.split('/');
-      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
-        'July', 'August', 'September', 'October', 'November', 'December'];
-      return `${monthNames[parseInt(month) - 1]}, 20${year}`;
-    })
-  )];
+  const months = useMemo(() => monthOptions(transactions), [transactions]);
+
+  // A month stored by another page may no longer have any transactions.
+  const activeMonth = months.includes(selectedMonth) ? selectedMonth : ALL_MONTHS;
 
   const [confirmFilter, setConfirmFilter] = useState<'all' | 'unconfirmed' | 'confirmed'>('all');
 
   const filteredTransactions = useMemo(() => {
-    let result = selectedMonth === 'All Months'
-      ? transactions
-      : transactions.filter(t => {
-          const [monthName, year] = selectedMonth.split(', ');
-          const monthIndex = ['January', 'February', 'March', 'April', 'May', 'June',
-            'July', 'August', 'September', 'October', 'November', 'December']
-            .indexOf(monthName) + 1;
-          const [tMonth, , tYear] = t.Date.split('/');
-          return parseInt(tMonth) === monthIndex && tYear === year.slice(-2);
-        });
+    const byMonth = filterByMonth(transactions, activeMonth);
+    if (confirmFilter === 'confirmed') return byMonth.filter(t => t.confirmed);
+    if (confirmFilter === 'unconfirmed') return byMonth.filter(t => !t.confirmed);
+    return byMonth;
+  }, [transactions, activeMonth, confirmFilter]);
 
-    if (confirmFilter === 'confirmed') result = result.filter(t => t.confirmed);
-    if (confirmFilter === 'unconfirmed') result = result.filter(t => !t.confirmed);
-
-    return result;
-  }, [transactions, selectedMonth, confirmFilter]);
+  /** The CSV column chosen for a field, or null when the user picked "No field". */
+  const mappedField = (field: (typeof CSV_FIELDS)[number]): string | null => {
+    const column = csvMappings[field];
+    return column && column !== 'none' ? column : null;
+  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    // Reset so picking the same file again re-triggers onChange.
+    e.target.value = '';
     if (!file) return;
 
-    Papa.parse(file, {
+    setCsvError(null);
+    setImportSummary(null);
+
+    Papa.parse<CsvRow>(file, {
       header: true,
+      skipEmptyLines: true,
+      transformHeader: (header) => header.trim(),
+      error: (error) => setCsvError(`Could not read that file: ${error.message}`),
       complete: (results) => {
-        if (results.data && results.data.length > 0) {
-          const headers = Object.keys(results.data[0] as object);
-          const previewData = results.data.slice(0, 2); // Get first 2 rows for preview
-          
-          // Get all existing subcategory names for smart matching
-          const allSubcategoryNames = categories.flatMap(cat => 
-            cat.subcategories.map(sub => sub.name)
-          );
-          
-          // Smart column detection for all fields
-          let detectedDateColumn = '';
-          let detectedAmountColumn = '';
-          let detectedDescriptionColumn = '';
-          let detectedCategoryColumn = '';
-          
-          let bestDateScore = 0;
-          let bestAmountScore = 0;
-          let bestDescriptionScore = 0;
-          let bestCategoryScore = 0;
-          
-          // Detect by column name for Date, Amount, Description
-          for (const header of headers) {
-            const dateScore = detectDateColumn(header);
-            const amountScore = detectAmountColumn(header);
-            const descScore = detectDescriptionColumn(header);
-            
-            if (dateScore > bestDateScore) {
-              bestDateScore = dateScore;
-              detectedDateColumn = header;
-            }
-            if (amountScore > bestAmountScore) {
-              bestAmountScore = amountScore;
-              detectedAmountColumn = header;
-            }
-            if (descScore > bestDescriptionScore) {
-              bestDescriptionScore = descScore;
-              detectedDescriptionColumn = header;
-            }
-          }
-          
-          // Smart category column detection - check by name first
-          let bestNameScore = 0;
-          for (const header of headers) {
-            const nameScore = detectCategoryColumn(header);
-            if (nameScore > bestNameScore) {
-              bestNameScore = nameScore;
-              detectedCategoryColumn = header;
-            }
-          }
-          
-          // If we have existing categories, also try matching by values
-          if (allSubcategoryNames.length > 0) {
-            for (const header of headers) {
-              // Skip if we already detected this by name and it's high confidence
-              if (header === detectedCategoryColumn && bestNameScore >= 50) {
-                continue;
-              }
-              
-              // Get sample values from this column
-              const columnValues = results.data
-                .slice(0, Math.min(20, results.data.length)) // Sample first 20 rows
-                .map(row => row[header])
-                .filter(val => val !== null && val !== undefined && val !== '');
-              
-              if (columnValues.length > 0) {
-                const matchScore = scoreCategoryMatch(columnValues, allSubcategoryNames);
-                // Combine name score and value match score
-                const nameScore = detectCategoryColumn(header);
-                const combinedScore = nameScore * 0.4 + matchScore * 0.6;
-                
-                if (combinedScore > bestCategoryScore) {
-                  bestCategoryScore = combinedScore;
-                  detectedCategoryColumn = header;
-                }
-              }
-            }
-          }
-          
-          setCsvFile(file);
-          setCsvHeaders(headers);
-          setCsvPreviewData(previewData);
-          setCsvMappings({
-            Date: detectedDateColumn || headers[0] || '',
-            Amount: detectedAmountColumn || headers[1] || '',
-            Description: detectedDescriptionColumn || headers[2] || '',
-            Category: detectedCategoryColumn || headers[3] || '',
-          });
-          setShowMappingModal(true);
+        const rows = results.data.filter((row) => row && Object.keys(row).length > 0);
+
+        if (rows.length === 0) {
+          setCsvError('That file has no data rows.');
+          return;
         }
-      }
+
+        const headers = Object.keys(rows[0]).filter(Boolean);
+        if (headers.length === 0) {
+          setCsvError('That file has no column headers.');
+          return;
+        }
+
+        const previewData = rows.slice(0, 2); // Get first 2 rows for preview
+        
+        // Get all existing subcategory names for smart matching
+        const allSubcategoryNames = categories.flatMap(cat =>
+          cat.subcategories.map(sub => sub.name)
+        );
+
+        // Smart column detection for all fields
+        let detectedDateColumn = '';
+        let detectedAmountColumn = '';
+        let detectedDescriptionColumn = '';
+        let detectedCategoryColumn = '';
+
+        let bestDateScore = 0;
+        let bestAmountScore = 0;
+        let bestDescriptionScore = 0;
+        let bestCategoryScore = 0;
+
+        // Detect by column name for Date, Amount, Description
+        for (const header of headers) {
+          const dateScore = detectDateColumn(header);
+          const amountScore = detectAmountColumn(header);
+          const descScore = detectDescriptionColumn(header);
+
+          if (dateScore > bestDateScore) {
+            bestDateScore = dateScore;
+            detectedDateColumn = header;
+          }
+          if (amountScore > bestAmountScore) {
+            bestAmountScore = amountScore;
+            detectedAmountColumn = header;
+          }
+          if (descScore > bestDescriptionScore) {
+            bestDescriptionScore = descScore;
+            detectedDescriptionColumn = header;
+          }
+        }
+
+        // Smart category column detection - check by name first
+        let bestNameScore = 0;
+        for (const header of headers) {
+          const nameScore = detectCategoryColumn(header);
+          if (nameScore > bestNameScore) {
+            bestNameScore = nameScore;
+            detectedCategoryColumn = header;
+          }
+        }
+
+        // If we have existing categories, also try matching by values
+        if (allSubcategoryNames.length > 0) {
+          for (const header of headers) {
+            // Skip if we already detected this by name and it's high confidence
+            if (header === detectedCategoryColumn && bestNameScore >= 50) {
+              continue;
+            }
+
+            // Get sample values from this column
+            const columnValues = rows
+              .slice(0, 20) // Sample the first rows
+              .map((row) => row[header])
+              .filter((val) => val !== null && val !== undefined && val !== '');
+
+            if (columnValues.length > 0) {
+              const matchScore = scoreCategoryMatch(columnValues, allSubcategoryNames);
+              // Combine name score and value match score
+              const nameScore = detectCategoryColumn(header);
+              const combinedScore = nameScore * 0.4 + matchScore * 0.6;
+
+              if (combinedScore > bestCategoryScore) {
+                bestCategoryScore = combinedScore;
+                detectedCategoryColumn = header;
+              }
+            }
+          }
+        }
+
+        setCsvFile(file);
+        setCsvHeaders(headers);
+        setCsvPreviewData(previewData);
+        setCsvMappings({
+          Date: detectedDateColumn || headers[0] || '',
+          Amount: detectedAmountColumn || headers[1] || '',
+          Description: detectedDescriptionColumn || headers[2] || '',
+          // Only pre-fill Category when a column was actually recognised;
+          // defaulting to the 4th column mis-tagged unrelated data.
+          Category: detectedCategoryColumn || 'none',
+        });
+        setShowMappingModal(true);
+      },
     });
   };
 
   const handleSaveMapping = () => {
     if (!csvFile) return;
 
-    Papa.parse(csvFile, {
-      header: true,
-      complete: (results) => {
-        const newTransactions: Transaction[] = (results.data as any[])
-          .filter(t => {
-            const dateField = csvMappings.Date;
-            const amountField = csvMappings.Amount;
-            return dateField && amountField && dateField !== 'none' && amountField !== 'none' && t[dateField] && t[amountField];
-          })
-          .map(t => {
-            const dateField = csvMappings.Date;
-            const descriptionField = csvMappings.Description;
-            const amountField = csvMappings.Amount;
-            const categoryField = csvMappings.Category;
-            
-            const amount = parseFloat(String(t[amountField]).replace(/[^0-9.-]/g, ''));
-            const parsedDate = parseDate(t[dateField]);
-            return {
-              id: createTransactionId({
-                Date: parsedDate,
-                Description: descriptionField && descriptionField !== 'none' ? t[descriptionField] || '' : '',
-                Amount: amount
-              }),
-              Date: parsedDate,
-              Amount: amount,
-              Description: descriptionField && descriptionField !== 'none' ? t[descriptionField] || '' : '',
-              Category: categoryField && categoryField !== 'none' ? t[categoryField] || '' : '',
-              confirmed: false,
-            };
-          });
+    const dateField = mappedField('Date');
+    const amountField = mappedField('Amount');
+    const descriptionField = mappedField('Description');
+    const categoryField = mappedField('Category');
 
-        addTransactions(newTransactions);
+    if (!dateField || !amountField) {
+      setCsvError('Pick which columns hold the date and the amount.');
+      return;
+    }
+
+    setCsvError(null);
+
+    Papa.parse<CsvRow>(csvFile, {
+      header: true,
+      skipEmptyLines: true,
+      transformHeader: (header) => header.trim(),
+      error: (error) => setCsvError(`Could not read that file: ${error.message}`),
+      complete: async (results) => {
+        // Identical rows (two $5 coffees on the same day) hash to the same id, so
+        // count repeats and pass the occurrence through to keep them distinct.
+        const seen = new Map<string, number>();
+        const newTransactions: Transaction[] = [];
+        let skipped = 0;
+
+        for (const row of results.data) {
+          if (!row) continue;
+
+          const rawDate = row[dateField];
+          const rawAmount = row[amountField];
+          if (!rawDate || rawAmount === undefined || rawAmount === '') continue;
+
+          const amount = parseFloat(String(rawAmount).replace(/[^0-9.-]/g, ''));
+          const date = parseDate(rawDate);
+
+          // Firebase rejects NaN outright, which used to fail the whole import.
+          if (!Number.isFinite(amount) || !parseTransactionDate(date)) {
+            skipped++;
+            continue;
+          }
+
+          const description = descriptionField ? row[descriptionField] || '' : '';
+          const key = `${date}|${description}|${amount}`;
+          const occurrence = seen.get(key) ?? 0;
+          seen.set(key, occurrence + 1);
+
+          newTransactions.push({
+            id: createTransactionId({ Date: date, Description: description, Amount: amount }, occurrence),
+            Date: date,
+            Amount: amount,
+            Description: description,
+            Category: categoryField ? row[categoryField] || '' : '',
+            confirmed: false,
+          });
+        }
+
+        if (newTransactions.length === 0) {
+          setCsvError('No rows in that file had a usable date and amount.');
+          return;
+        }
+
+        const added = await addTransactions(applyCategorization(newTransactions));
+
+        const parts = [`Imported ${added} transaction${added === 1 ? '' : 's'}`];
+        const duplicates = newTransactions.length - added;
+        if (duplicates > 0) parts.push(`${duplicates} already present`);
+        if (skipped > 0) parts.push(`${skipped} skipped (unreadable date or amount)`);
+
+        setImportSummary(parts.join(' · '));
         setShowMappingModal(false);
         setCsvFile(null);
-      }
+      },
     });
   };
 
@@ -322,16 +390,16 @@ export function Transactions() {
 
     if (selectedTransaction.importedCategory && selectedCategory) {
       await addMapping(selectedTransaction.importedCategory, selectedCategory);
-      // Apply mapping to all transactions with the same bank category
+      // Apply the new mapping to every transaction with the same bank category.
       const importedCat = selectedTransaction.importedCategory;
-      const allUpdated = transactions.map(t => {
-        if (t.id === selectedTransaction.id) return { ...t, Category: categoryToSave, hasRule: createRule };
-        if (t.importedCategory === importedCat) {
-          return { ...t, Category: selectedCategory };
-        }
-        return t;
-      });
-      await saveTransactions(allUpdated);
+      await mutateTransactions(current =>
+        current.map(t => {
+          if (t.id === selectedTransaction.id) {
+            return { ...t, Category: categoryToSave, hasRule: createRule };
+          }
+          return t.importedCategory === importedCat ? { ...t, Category: selectedCategory } : t;
+        })
+      );
     } else {
       await updateTransaction(selectedTransaction.id, {
         Category: categoryToSave,
@@ -368,13 +436,13 @@ export function Transactions() {
     }
 
     if (ruleScope === 'all') {
-      const matchLower = pendingRule.matchText.toLowerCase();
-      const updated = transactions.map(t =>
-        t.Description.toLowerCase() === matchLower
-          ? { ...t, Category: pendingRule.category, hasRule: true }
-          : t
+      await mutateTransactions(current =>
+        current.map(t =>
+          ruleMatches(t.Description, pendingRule.matchText)
+            ? { ...t, Category: pendingRule.category, hasRule: true }
+            : t
+        )
       );
-      await saveTransactions(updated);
     }
 
     setShowRuleDialog(false);
@@ -384,21 +452,6 @@ export function Transactions() {
     setCreateRule(false);
     setIsOverridingRule(false);
   };
-
-  const allSubcategories = categories.flatMap(cat =>
-    cat.subcategories.map(sub => ({ name: sub.name, parent: cat.name }))
-  );
-
-  // Memoize category options for the select dropdowns
-  const categoryOptions = useMemo(() => {
-    return categories.flatMap(category =>
-      category.subcategories.map(sub => ({
-        id: sub.id,
-        value: sub.name,
-        label: `${category.name} - ${sub.name}`
-      }))
-    );
-  }, [categories]);
 
   // Memoize category groups for grouped dropdowns
   const categoryGroups = useMemo(() => {
@@ -457,17 +510,9 @@ export function Transactions() {
           </Button>
         )
       },
-      cell: ({ row }) => {
-        const transaction = row.original;
-        const dateParts = transaction.Date.split('/');
-        const date = new Date(2000 + parseInt(dateParts[2]), parseInt(dateParts[0]) - 1, parseInt(dateParts[1]));
-        const formattedDate = date.toLocaleDateString('en-US', {
-          month: 'short',
-          day: 'numeric',
-          year: 'numeric'
-        });
-        return <div className="font-medium">{formattedDate}</div>
-      },
+      cell: ({ row }) => (
+        <div className="font-medium">{formatTransactionDate(row.original.Date)}</div>
+      ),
     },
     {
       accessorKey: "Description",
@@ -543,13 +588,7 @@ export function Transactions() {
       cell: ({ row }) => {
         const transaction = row.original;
         const amount = parseFloat(String(row.getValue("Amount")));
-        const dateParts = transaction.Date.split('/');
-        const date = new Date(2000 + parseInt(dateParts[2]), parseInt(dateParts[0]) - 1, parseInt(dateParts[1]));
-        const formattedDate = date.toLocaleDateString('en-US', {
-          month: 'short',
-          day: 'numeric',
-          year: 'numeric'
-        });
+        const formattedDate = formatTransactionDate(transaction.Date);
         if (isMobile) {
           return (
             <div className="text-right pr-4">
@@ -689,7 +728,7 @@ export function Transactions() {
         )
       },
     },
-  ], [categories, categoryOptions, handleCategoryChange, toggleConfirm, isMobile, bankAccounts]);
+  ], [categories, handleCategoryChange, toggleConfirm, isMobile, bankAccounts, formatCurrency]);
 
   const isMobileSheetOpen = isMobile && isEditPanelOpen && !!selectedTransaction;
 
@@ -730,16 +769,7 @@ export function Transactions() {
                   Upload CSV
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onSelect={async () => {
-                    for (const account of bankAccounts) {
-                      try {
-                        const newTransactions = await syncTransactions(account);
-                        await addTransactions(applyMappings(newTransactions));
-                      } catch (err) {
-                        console.error(`Sync failed for ${account.name}:`, err);
-                      }
-                    }
-                  }}
+                  onSelect={() => void syncAccounts(bankAccounts)}
                   disabled={bankAccounts.length === 0}
                 >
                   <RefreshCw className="h-4 w-4 mr-2" />
@@ -769,7 +799,7 @@ export function Transactions() {
             className="relative shrink-0"
           >
             <SlidersHorizontal className="h-4 w-4" />
-            {(selectedMonth !== 'All Months' || confirmFilter !== 'all') && (
+            {(activeMonth !== ALL_MONTHS || confirmFilter !== 'all') && (
               <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-primary" />
             )}
             <span className="sr-only">Filters</span>
@@ -780,7 +810,7 @@ export function Transactions() {
         <div className="hidden lg:flex sticky top-0 z-10 h-16 justify-between items-center bg-background border-b -mx-6 px-6">
           <h1 className="font-medium">Transactions</h1>
           <div className="flex items-center gap-4">
-            <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+            <Select value={activeMonth} onValueChange={setSelectedMonth}>
               <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="Select month" />
               </SelectTrigger>
@@ -816,16 +846,7 @@ export function Transactions() {
                   Upload CSV
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onSelect={async () => {
-                    for (const account of bankAccounts) {
-                      try {
-                        const newTransactions = await syncTransactions(account);
-                        await addTransactions(applyMappings(newTransactions));
-                      } catch (err) {
-                        console.error(`Sync failed for ${account.name}:`, err);
-                      }
-                    }
-                  }}
+                  onSelect={() => void syncAccounts(bankAccounts)}
                   disabled={bankAccounts.length === 0}
                 >
                   <RefreshCw className="h-4 w-4 mr-2" />
@@ -839,6 +860,29 @@ export function Transactions() {
             </DropdownMenu>
           </div>
         </div>
+
+      {(csvError || importSummary) && (
+        <div className="mt-3 space-y-2">
+          {csvError && (
+            <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span className="flex-1">{csvError}</span>
+              <button onClick={() => setCsvError(null)} className="shrink-0" aria-label="Dismiss">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+          {importSummary && (
+            <div className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2 text-sm">
+              <Check className="h-4 w-4 shrink-0 text-green-600" />
+              <span className="flex-1">{importSummary}</span>
+              <button onClick={() => setImportSummary(null)} className="shrink-0" aria-label="Dismiss">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="lg:flex lg:items-start lg:gap-3 min-h-0 flex-1 lg:mt-4">
         <div
@@ -904,13 +948,7 @@ export function Transactions() {
             <CardContent className="space-y-4">
               <div>
                 <div className="text-sm text-muted-foreground">
-                  {new Date(2000 + parseInt(selectedTransaction.Date.split('/')[2]),
-                    parseInt(selectedTransaction.Date.split('/')[0]) - 1,
-                    parseInt(selectedTransaction.Date.split('/')[1])).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric'
-                    })}
+                  {formatTransactionDate(selectedTransaction.Date)}
                 </div>
                 <div className="text-2xl font-bold">
                   {formatCurrency(parseFloat(String(selectedTransaction.Amount)))}
@@ -1064,13 +1102,7 @@ export function Transactions() {
                 <div className="space-y-4 mt-4 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
                   <div>
                     <div className="text-sm text-muted-foreground">
-                      {new Date(2000 + parseInt(selectedTransaction.Date.split('/')[2]),
-                        parseInt(selectedTransaction.Date.split('/')[0]) - 1,
-                        parseInt(selectedTransaction.Date.split('/')[1])).toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric'
-                        })}
+                      {formatTransactionDate(selectedTransaction.Date)}
                     </div>
                     <div className="text-2xl font-bold">
                       {formatCurrency(parseFloat(String(selectedTransaction.Amount)))}
@@ -1285,7 +1317,7 @@ export function Transactions() {
             <div className="space-y-4 mt-4 pb-4">
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">Month</label>
-                <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+                <Select value={activeMonth} onValueChange={setSelectedMonth}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select month" />
                   </SelectTrigger>
@@ -1333,12 +1365,12 @@ export function Transactions() {
                   </SelectContent>
                 </Select>
               </div>
-              {(selectedMonth !== 'All Months' || confirmFilter !== 'all' || mobileCategoryFilter !== 'all') && (
+              {(activeMonth !== ALL_MONTHS || confirmFilter !== 'all' || mobileCategoryFilter !== 'all') && (
                 <Button
                   variant="outline"
                   className="w-full"
                   onClick={() => {
-                    setSelectedMonth('All Months');
+                    setSelectedMonth(ALL_MONTHS);
                     setConfirmFilter('all');
                     setMobileCategoryFilter('all');
                   }}
@@ -1457,21 +1489,30 @@ export function Transactions() {
               <DialogTitle>Match CSV Columns</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
+              {csvError && (
+                <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  <span>{csvError}</span>
+                </div>
+              )}
               {/* Horizontal table-like mapping with dropdowns */}
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className="border-b">
-                      {['Date', 'Amount', 'Description', 'Category'].map(field => (
+                      {CSV_FIELDS.map(field => (
                         <th key={field} className="text-left p-3 font-medium">
                           {field}
+                          {(field === 'Date' || field === 'Amount') && (
+                            <span className="text-destructive"> *</span>
+                          )}
                         </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     <tr>
-                      {['Date', 'Amount', 'Description', 'Category'].map(field => (
+                      {CSV_FIELDS.map(field => (
                         <td key={field} className="p-3">
                           <Select
                             value={csvMappings[field] || 'none'}
@@ -1512,54 +1553,24 @@ export function Transactions() {
                       </thead>
                       <tbody>
                         {csvPreviewData.map((row, idx) => {
-                          // Get mapped values
-                          const dateField = csvMappings.Date && csvMappings.Date !== 'none' ? csvMappings.Date : null;
-                          const descriptionField = csvMappings.Description && csvMappings.Description !== 'none' ? csvMappings.Description : null;
-                          const amountField = csvMappings.Amount && csvMappings.Amount !== 'none' ? csvMappings.Amount : null;
-                          const categoryField = csvMappings.Category && csvMappings.Category !== 'none' ? csvMappings.Category : null;
+                          const dateField = mappedField('Date');
+                          const descriptionField = mappedField('Description');
+                          const amountField = mappedField('Amount');
+                          const categoryField = mappedField('Category');
 
-                          // Format date using smart parser
-                          let formattedDate = '';
-                          if (dateField && row[dateField]) {
-                            try {
-                              const parsedDateStr = parseDate(row[dateField]);
-                              // Convert parsed date (MM/DD/YY) to Date object for formatting
-                              const dateParts = parsedDateStr.split('/');
-                              if (dateParts.length === 3) {
-                                const year = parseInt(dateParts[2]);
-                                // Handle 2-digit year: assume 20xx for 00-99
-                                const fullYear = year < 100 ? 2000 + year : year;
-                                const date = new Date(fullYear, parseInt(dateParts[0]) - 1, parseInt(dateParts[1]));
-                                if (!isNaN(date.getTime())) {
-                                  formattedDate = date.toLocaleDateString('en-US', {
-                                    month: 'short',
-                                    day: 'numeric',
-                                    year: 'numeric'
-                                  });
-                                } else {
-                                  formattedDate = parsedDateStr;
-                                }
-                              } else {
-                                formattedDate = parsedDateStr;
-                              }
-                            } catch (e) {
-                              formattedDate = String(row[dateField]);
-                            }
-                          }
+                          const rawDate = dateField ? row[dateField] : undefined;
+                          const formattedDate = rawDate ? formatTransactionDate(parseDate(rawDate)) : '';
 
-                          // Format amount
-                          let formattedAmount = '';
-                          if (amountField && row[amountField]) {
-                            try {
-                              const amount = parseFloat(String(row[amountField]).replace(/[^0-9.-]/g, ''));
-                              formattedAmount = formatCurrency(amount);
-                            } catch (e) {
-                              formattedAmount = String(row[amountField]);
-                            }
-                          }
+                          const rawAmount = amountField ? row[amountField] : undefined;
+                          const amount = rawAmount !== undefined
+                            ? parseFloat(String(rawAmount).replace(/[^0-9.-]/g, ''))
+                            : NaN;
+                          const formattedAmount = Number.isFinite(amount)
+                            ? formatCurrency(amount)
+                            : (rawAmount ? String(rawAmount) : '');
 
-                          const description = descriptionField && row[descriptionField] ? String(row[descriptionField]) : '';
-                          const category = categoryField && row[categoryField] ? String(row[categoryField]) : '';
+                          const description = descriptionField ? String(row[descriptionField] ?? '') : '';
+                          const category = categoryField ? String(row[categoryField] ?? '') : '';
 
                           return (
                             <tr key={idx} className="border-b">
@@ -1580,7 +1591,12 @@ export function Transactions() {
               <Button variant="outline" onClick={() => setShowMappingModal(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleSaveMapping}>Import Transactions</Button>
+              <Button
+                onClick={handleSaveMapping}
+                disabled={!mappedField('Date') || !mappedField('Amount')}
+              >
+                Import Transactions
+              </Button>
             </DialogFooter>
           </ResponsiveDialogContent>
         </ResponsiveDialog>
