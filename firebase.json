@@ -2,17 +2,9 @@
   "database": {
     "rules": "database.rules.json"
   },
-  "functions": {
-    "source": "functions",
-    "runtime": "nodejs22"
-  },
   "hosting": {
     "public": "dist",
     "rewrites": [
-      {
-        "source": "/teller-api/**",
-        "function": "tellerProxy"
-      },
       {
         "source": "**",
         "destination": "/index.html"
@@ -25,9 +17,6 @@
     },
     "database": {
       "port": 9000
-    },
-    "functions": {
-      "port": 5001
     },
     "ui": {
       "enabled": true,

@@ -1,56 +1,25 @@
 import { useState, useEffect } from 'react';
-import { ref, onValue, set, update } from 'firebase/database';
-import { db, auth } from '@/lib/firebase';
-import { Transaction } from './useTransactions';
-import { parseDate } from '@/lib/utils';
-import { TellerAuthorization } from './useTellerConnect';
+import { ref, onValue, set } from 'firebase/database';
+import { db } from '@/lib/firebase';
 
+/**
+ * Read-only access to previously connected bank accounts.
+ *
+ * These records were created by the Teller bank sync, which was removed when
+ * Teller shut down its API; transactions are imported from CSV now. Nothing
+ * writes new accounts, but existing ones are still read so that already
+ * imported transactions keep showing which account they came from (the Account
+ * column, and the transactions search), and so a stale account can be removed.
+ *
+ * Stored records may still carry dead `accessToken` / `enrollmentId` fields.
+ * They are deliberately absent from this type so nothing can depend on them.
+ */
 export interface BankAccount {
-  id: string;             // Teller account ID
-  enrollmentId: string;
-  accessToken: string;
+  id: string;
   institutionName: string;
   name: string;
   type: string;           // depository, credit, etc.
   subtype: string;        // checking, savings, etc.
-  lastSyncAt: string | null;
-}
-
-const TELLER_API = '/teller-api';
-
-async function tellerHeaders(tellerAccessToken: string): Promise<Record<string, string>> {
-  const user = auth.currentUser;
-  if (!user) throw new Error('Not authenticated');
-  const idToken = await user.getIdToken();
-  return {
-    Authorization: `Bearer ${idToken}`,
-    'x-teller-token': tellerAccessToken,
-  };
-}
-
-interface TellerAccount {
-  id: string;
-  name: string;
-  type: string;
-  subtype: string;
-  institution: { name: string };
-  enrollment_id: string;
-}
-
-interface TellerTransaction {
-  id: string;
-  date: string;
-  description: string;
-  amount: string;
-  status: 'posted' | 'pending';
-  type: string;
-  details?: {
-    category?: string;
-    counterparty?: {
-      name?: string;
-      type?: string;
-    };
-  };
 }
 
 export function useBankAccounts(userId: string | null) {
@@ -78,76 +47,10 @@ export function useBankAccounts(userId: string | null) {
     return () => unsubscribe();
   }, [userId]);
 
-  const connectAccounts = async (authorization: TellerAuthorization): Promise<void> => {
-    if (!userId) return;
-
-    const response = await fetch(`${TELLER_API}/accounts`, {
-      headers: await tellerHeaders(authorization.accessToken),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Teller API error: ${response.status}`);
-    }
-
-    const tellerAccounts: TellerAccount[] = await response.json();
-
-    for (const account of tellerAccounts) {
-      const bankAccount: BankAccount = {
-        id: account.id,
-        enrollmentId: authorization.enrollment.id,
-        accessToken: authorization.accessToken,
-        institutionName: account.institution.name,
-        name: account.name,
-        type: account.type,
-        subtype: account.subtype,
-        lastSyncAt: null,
-      };
-      await set(ref(db, `users/${userId}/bankAccounts/${account.id}`), bankAccount);
-    }
-  };
-
-  const syncTransactions = async (account: BankAccount): Promise<Transaction[]> => {
-    const response = await fetch(`${TELLER_API}/accounts/${account.id}/transactions`, {
-      headers: await tellerHeaders(account.accessToken),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Teller API error: ${response.status}`);
-    }
-
-    const tellerTransactions: TellerTransaction[] = await response.json();
-
-    const transactions: Transaction[] = tellerTransactions
-      .filter((t) => t.status === 'posted')
-      .map((t) => {
-        const amount = parseFloat(t.amount);
-        const date = parseDate(t.date);
-        const description = t.details?.counterparty?.name || t.description;
-        return {
-          id: t.id,
-          Date: date,
-          Amount: amount,
-          Description: description,
-          ...(t.details?.category ? { importedCategory: t.details.category } : {}),
-          confirmed: false,
-          bankAccountId: account.id,
-        };
-      })
-      .filter((transaction) => Number.isFinite(transaction.Amount));
-
-    if (userId) {
-      await update(ref(db, `users/${userId}/bankAccounts/${account.id}`), {
-        lastSyncAt: new Date().toISOString(),
-      });
-    }
-
-    return transactions;
-  };
-
   const removeAccount = async (accountId: string): Promise<void> => {
     if (!userId) return;
     await set(ref(db, `users/${userId}/bankAccounts/${accountId}`), null);
   };
 
-  return { bankAccounts, loading, connectAccounts, syncTransactions, removeAccount };
+  return { bankAccounts, loading, removeAccount };
 }

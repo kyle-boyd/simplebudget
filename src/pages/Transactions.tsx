@@ -1,7 +1,7 @@
-import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ColumnDef } from '@tanstack/react-table';
-import { ArrowUpDown, Check, ListFilter, Trash2, AlertTriangle, Building2, RefreshCw, X, Loader2, Plus, Upload, Link, SlidersHorizontal, Tag } from 'lucide-react';
+import { ColumnDef, Column } from '@tanstack/react-table';
+import { ArrowUpDown, ArrowUp, ArrowDown, Check, ListFilter, Trash2, AlertTriangle, Building2, X, Plus, Upload, SlidersHorizontal, Tag } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -20,7 +20,6 @@ import { useTransactions, Transaction } from '@/hooks/useTransactions';
 import { useCategories } from '@/hooks/useCategories';
 import { useRules, Rule } from '@/hooks/useRules';
 import { useBankAccounts, BankAccount } from '@/hooks/useBankAccounts';
-import { useTellerConnect, TellerAuthorization } from '@/hooks/useTellerConnect';
 import { useCategoryMappings } from '@/hooks/useCategoryMappings';
 import { useCurrency } from '@/hooks/useUserSettings';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -40,13 +39,35 @@ const CSV_FIELDS = ['Date', 'Amount', 'Description', 'Category'] as const;
 
 type CsvRow = Record<string, string | undefined>;
 
+/** Column header button whose icon reflects the current sort direction. */
+function SortableHeader({
+  column,
+  children,
+}: {
+  column: Column<Transaction, unknown>;
+  children: React.ReactNode;
+}) {
+  const sorted = column.getIsSorted();
+  const Icon = sorted === 'asc' ? ArrowUp : sorted === 'desc' ? ArrowDown : ArrowUpDown;
+  return (
+    <Button
+      variant="ghost"
+      onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+      className="h-8 px-2 lg:px-3"
+    >
+      {children}
+      <Icon className="ml-2 h-4 w-4" />
+    </Button>
+  );
+}
+
 export function Transactions() {
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
-  const { transactions, addTransactions, updateTransaction, mutateTransactions, toggleConfirm, deleteTransactionsByAccount } = useTransactions(user?.uid || null);
-  const { categories, addCategory } = useCategories(user?.uid || null);
+  const { transactions, loading: transactionsLoading, addTransactions, updateTransaction, mutateTransactions, toggleConfirm, deleteTransactionsByAccount } = useTransactions(user?.uid || null);
+  const { categories, loading: categoriesLoading, addCategory } = useCategories(user?.uid || null);
   const { mappings, addMapping, deleteMapping } = useCategoryMappings(user?.uid || null);
-  const { rules, loading: rulesLoading, addRule, updateRule, deleteRule, findConflict } = useRules(user?.uid || null);
+  const { rules, addRule, updateRule, deleteRule, findConflict } = useRules(user?.uid || null);
   const { formatCurrency } = useCurrency();
   const isMobile = useIsMobile();
   const [selectedMonth, setSelectedMonth] = useState(
@@ -76,13 +97,11 @@ export function Transactions() {
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [mobileCategoryFilter, setMobileCategoryFilter] = useState('all');
 
-  const [syncingAccountId, setSyncingAccountId] = useState<string | null>(null);
-  const [syncError, setSyncError] = useState<string | null>(null);
   const [showAccountsModal, setShowAccountsModal] = useState(false);
   const [accountToDelete, setAccountToDelete] = useState<BankAccount | null>(null);
   const [deleteAccountTransactions, setDeleteAccountTransactions] = useState(false);
 
-  const { bankAccounts, loading: bankAccountsLoading, connectAccounts, syncTransactions, removeAccount } = useBankAccounts(user?.uid || null);
+  const { bankAccounts, removeAccount } = useBankAccounts(user?.uid || null);
 
   const formatImportedCategory = (raw: string | undefined) => {
     if (!raw) return '';
@@ -99,58 +118,6 @@ export function Transactions() {
     (txns: Transaction[]) => categorize(txns, rules, mappings),
     [rules, mappings]
   );
-
-  const syncAccounts = useCallback(async (accounts: BankAccount[]) => {
-    const failures: string[] = [];
-
-    for (const account of accounts) {
-      try {
-        const newTransactions = await syncTransactions(account);
-        await addTransactions(applyCategorization(newTransactions));
-      } catch {
-        failures.push(account.name);
-      }
-    }
-
-    setSyncError(
-      failures.length > 0
-        ? `Failed to sync ${failures.join(', ')}. Please try again.`
-        : null
-    );
-  }, [syncTransactions, addTransactions, applyCategorization]);
-
-  // Sync once per session, after rules and mappings have loaded so the incoming
-  // transactions actually get categorized.
-  const hasSyncedOnLogin = useRef(false);
-  useEffect(() => {
-    if (bankAccountsLoading || rulesLoading || bankAccounts.length === 0) return;
-    if (hasSyncedOnLogin.current) return;
-    hasSyncedOnLogin.current = true;
-    void syncAccounts(bankAccounts);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bankAccountsLoading, rulesLoading, bankAccounts.length]);
-
-  const handleTellerSuccess = async (authorization: TellerAuthorization) => {
-    try {
-      await connectAccounts(authorization);
-    } catch (err) {
-      setSyncError('Failed to connect bank account. Please try again.');
-    }
-  };
-
-  const { open: openTellerConnect } = useTellerConnect({
-    onSuccess: handleTellerSuccess,
-    onFailure: () => setSyncError('Bank connection failed. Please try again.'),
-  });
-
-  const handleSyncAccount = async (account: BankAccount) => {
-    setSyncingAccountId(account.id);
-    try {
-      await syncAccounts([account]);
-    } finally {
-      setSyncingAccountId(null);
-    }
-  };
 
   // Save to localStorage whenever selectedMonth changes
   useEffect(() => {
@@ -498,36 +465,17 @@ export function Transactions() {
     },
     {
       accessorKey: "Date",
-      header: ({ column }) => {
-        return (
-          <Button
-            variant="ghost"
-            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-            className="h-8 px-2 lg:px-3"
-          >
-            Date
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          </Button>
-        )
-      },
+      header: ({ column }) => <SortableHeader column={column}>Date</SortableHeader>,
+      sortingFn: (a, b) =>
+        (parseTransactionDate(a.original.Date)?.getTime() ?? 0) -
+        (parseTransactionDate(b.original.Date)?.getTime() ?? 0),
       cell: ({ row }) => (
-        <div className="font-medium">{formatTransactionDate(row.original.Date)}</div>
+        <div className="font-medium whitespace-nowrap">{formatTransactionDate(row.original.Date)}</div>
       ),
     },
     {
       accessorKey: "Description",
-      header: ({ column }) => {
-        return (
-          <Button
-            variant="ghost"
-            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-            className="h-8 px-2 lg:px-3"
-          >
-            Description
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          </Button>
-        )
-      },
+      header: ({ column }) => <SortableHeader column={column}>Description</SortableHeader>,
       cell: ({ row }) => {
         const transaction = row.original;
         if (isMobile) {
@@ -556,6 +504,13 @@ export function Transactions() {
     {
       id: "account",
       header: "Account",
+      // No accessorKey, so give the global filter searchable text (name +
+      // institution) — otherwise "chase" matches nothing even though it shows.
+      accessorFn: (transaction) => {
+        if (!transaction.bankAccountId) return '';
+        const account = bankAccounts.find(a => a.id === transaction.bankAccountId);
+        return account ? `${account.name} ${account.institutionName}` : '';
+      },
       cell: ({ row }) => {
         const transaction = row.original;
         if (!transaction.bankAccountId) return null;
@@ -571,20 +526,11 @@ export function Transactions() {
     },
     {
       accessorKey: "Amount",
-      header: ({ column }) => {
-        return (
-          <div className="text-right">
-            <Button
-              variant="ghost"
-              onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-              className="h-8 px-2 lg:px-3"
-            >
-              Amount
-              <ArrowUpDown className="ml-2 h-4 w-4" />
-            </Button>
-          </div>
-        )
-      },
+      header: ({ column }) => (
+        <div className="text-right">
+          <SortableHeader column={column}>Amount</SortableHeader>
+        </div>
+      ),
       cell: ({ row }) => {
         const transaction = row.original;
         const amount = parseFloat(String(row.getValue("Amount")));
@@ -660,6 +606,9 @@ export function Transactions() {
     },
     {
       accessorKey: "confirmed",
+      // Pin the actions column to the right edge on desktop so Confirm/Unconfirm
+      // stay reachable when the table overflows horizontally.
+      meta: { className: "lg:sticky lg:right-0 bg-background" },
       header: () => {
         return (
           <div className="text-center">
@@ -768,16 +717,9 @@ export function Transactions() {
                   <Upload className="h-4 w-4 mr-2" />
                   Upload CSV
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={() => void syncAccounts(bankAccounts)}
-                  disabled={bankAccounts.length === 0}
-                >
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Sync {bankAccounts.length} {bankAccounts.length === 1 ? 'Account' : 'Accounts'}
-                </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => setShowAccountsModal(true)}>
                   <Building2 className="h-4 w-4 mr-2" />
-                  Manage Connected Accounts
+                  Manage Imported Accounts
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -845,16 +787,9 @@ export function Transactions() {
                   <Upload className="h-4 w-4 mr-2" />
                   Upload CSV
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={() => void syncAccounts(bankAccounts)}
-                  disabled={bankAccounts.length === 0}
-                >
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Sync {bankAccounts.length} {bankAccounts.length === 1 ? 'Account' : 'Accounts'}
-                </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => setShowAccountsModal(true)}>
                   <Building2 className="h-4 w-4 mr-2" />
-                  Manage Connected Accounts
+                  Manage Imported Accounts
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -893,6 +828,7 @@ export function Transactions() {
           <DataTable
             columns={columns}
             data={filteredTransactions}
+            loading={transactionsLoading || categoriesLoading}
             searchPlaceholder="Search transactions..."
             categoryFilterKey="Category"
             categoryFilterGroups={isMobile ? [] : categoryGroups}
@@ -914,7 +850,7 @@ export function Transactions() {
                 </SelectContent>
               </Select>
             )}
-            forceHiddenColumnIds={isMobile ? ['select', 'Category', 'confirmed', 'Date', 'account'] : undefined}
+            forceHiddenColumnIds={isMobile ? ['select', 'Category', 'confirmed', 'Date', 'account'] : (isEditPanelOpen && selectedTransaction ? ['account'] : undefined)}
             compact={isMobile}
             columnOrder={isMobile ? ['Description', 'Amount', 'select', 'Category', 'confirmed', 'Date'] : undefined}
             onSwipeRight={isMobile ? (transaction) => toggleConfirm(transaction.id) : undefined}
@@ -943,7 +879,22 @@ export function Transactions() {
         {isEditPanelOpen && selectedTransaction && (
           <Card className="hidden lg:block w-80 shrink-0 lg:sticky lg:top-[9rem] lg:self-start">
             <CardHeader>
-              <CardTitle>{selectedTransaction.Description}</CardTitle>
+              <div className="flex items-start justify-between gap-2">
+                <CardTitle>{selectedTransaction.Description}</CardTitle>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 shrink-0 -mr-1 -mt-1"
+                  aria-label="Close"
+                  onClick={() => {
+                    setIsEditPanelOpen(false);
+                    setSelectedTransaction(null);
+                    setIsOverridingRule(false);
+                  }}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
@@ -1607,22 +1558,13 @@ export function Transactions() {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Building2 className="h-4 w-4" />
-                Connected Accounts
+                Imported Accounts
               </DialogTitle>
             </DialogHeader>
             <div className="space-y-3 py-2">
-              {syncError && (
-                <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                  <AlertTriangle className="h-4 w-4 shrink-0" />
-                  <span className="flex-1">{syncError}</span>
-                  <button onClick={() => setSyncError(null)} className="shrink-0">
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              )}
               {bankAccounts.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-4">
-                  No accounts connected yet.
+                  No accounts. Transactions are added with Upload CSV.
                 </p>
               ) : (
                 <div className="space-y-2">
@@ -1636,26 +1578,8 @@ export function Transactions() {
                         <p className="text-xs text-muted-foreground capitalize">
                           {account.name} · {account.subtype}
                         </p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {account.lastSyncAt
-                            ? `Last synced ${new Date(account.lastSyncAt).toLocaleString()}`
-                            : 'Never synced'}
-                        </p>
                       </div>
                       <div className="flex items-center gap-2 ml-4 shrink-0">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleSyncAccount(account)}
-                          disabled={syncingAccountId === account.id}
-                        >
-                          {syncingAccountId === account.id ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <RefreshCw className="h-3.5 w-3.5" />
-                          )}
-                          <span className="ml-1.5">Sync</span>
-                        </Button>
                         <Button
                           size="sm"
                           variant="ghost"
@@ -1673,12 +1597,6 @@ export function Transactions() {
                 </div>
               )}
             </div>
-            <DialogFooter>
-              <Button onClick={openTellerConnect} variant="outline" className="w-full sm:w-auto">
-                <Link className="h-4 w-4 mr-2" />
-                Connect More Accounts
-              </Button>
-            </DialogFooter>
           </ResponsiveDialogContent>
         </ResponsiveDialog>
 
@@ -1695,7 +1613,7 @@ export function Transactions() {
               </DialogTitle>
               <DialogDescription>
                 Remove <strong>{accountToDelete?.institutionName}</strong> ({accountToDelete?.name})?
-                This will disconnect it from syncing.
+                Its imported transactions are kept unless you choose otherwise.
               </DialogDescription>
             </DialogHeader>
             <div className="py-2">
@@ -1707,7 +1625,7 @@ export function Transactions() {
                   className="mt-0.5"
                 />
                 <div>
-                  <p className="text-sm font-medium">Also delete synced transactions</p>
+                  <p className="text-sm font-medium">Also delete this account's transactions</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     Remove all transactions imported from this account
                   </p>

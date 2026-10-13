@@ -8,7 +8,7 @@ import {
   deleteUser,
 } from 'firebase/auth';
 import { ref, remove } from 'firebase/database';
-import { Building2, RefreshCw, Loader2, Link, Trash2, AlertTriangle, X } from 'lucide-react';
+import { Building2, Trash2, AlertTriangle } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -33,11 +33,7 @@ import {
 import { useAuth } from '@/hooks/useAuth';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { useTransactions } from '@/hooks/useTransactions';
-import { useRules } from '@/hooks/useRules';
-import { useCategoryMappings } from '@/hooks/useCategoryMappings';
 import { useBankAccounts, BankAccount } from '@/hooks/useBankAccounts';
-import { useTellerConnect, TellerAuthorization } from '@/hooks/useTellerConnect';
-import { categorize } from '@/lib/categorization';
 import { db } from '@/lib/firebase';
 
 const CURRENCY_OPTIONS = [
@@ -108,40 +104,10 @@ export function Settings() {
   const [passwordError, setPasswordError] = useState(false);
 
   // Bank accounts
-  const { addTransactions, deleteTransactionsByAccount } = useTransactions(user?.uid ?? null);
-  const { rules } = useRules(user?.uid ?? null);
-  const { mappings } = useCategoryMappings(user?.uid ?? null);
-  const { bankAccounts, connectAccounts, syncTransactions, removeAccount } = useBankAccounts(user?.uid ?? null);
-  const [syncingAccountId, setSyncingAccountId] = useState<string | null>(null);
-  const [syncError, setSyncError] = useState<string | null>(null);
+  const { deleteTransactionsByAccount } = useTransactions(user?.uid ?? null);
+  const { bankAccounts, removeAccount } = useBankAccounts(user?.uid ?? null);
   const [accountToDelete, setAccountToDelete] = useState<BankAccount | null>(null);
   const [deleteAccountTransactions, setDeleteAccountTransactions] = useState(false);
-
-  const handleTellerSuccess = async (authorization: TellerAuthorization) => {
-    try {
-      await connectAccounts(authorization);
-    } catch {
-      setSyncError('Failed to connect bank account. Please try again.');
-    }
-  };
-
-  const { open: openTellerConnect } = useTellerConnect({
-    onSuccess: handleTellerSuccess,
-    onFailure: () => setSyncError('Bank connection failed. Please try again.'),
-  });
-
-  const handleSyncAccount = async (account: BankAccount) => {
-    setSyncingAccountId(account.id);
-    setSyncError(null);
-    try {
-      const newTransactions = await syncTransactions(account);
-      await addTransactions(categorize(newTransactions, rules, mappings));
-    } catch {
-      setSyncError(`Failed to sync ${account.name}. Please try again.`);
-    } finally {
-      setSyncingAccountId(null);
-    }
-  };
 
   // Delete account
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -294,22 +260,13 @@ export function Settings() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Building2 className="h-4 w-4" />
-              Account Connections
+              Imported Accounts
             </CardTitle>
-            <CardDescription>Manage your connected bank accounts.</CardDescription>
+            <CardDescription>Accounts from previously imported transactions.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {syncError && (
-              <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                <AlertTriangle className="h-4 w-4 shrink-0" />
-                <span className="flex-1">{syncError}</span>
-                <button onClick={() => setSyncError(null)} className="shrink-0">
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            )}
             {bankAccounts.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-2">No accounts connected yet.</p>
+              <p className="text-sm text-muted-foreground py-2">No accounts. Import transactions from the Transactions page.</p>
             ) : (
               <div className="space-y-2">
                 {bankAccounts.map((account) => (
@@ -322,26 +279,8 @@ export function Settings() {
                       <p className="text-xs text-muted-foreground capitalize">
                         {account.name} · {account.subtype}
                       </p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {account.lastSyncAt
-                          ? `Last synced ${new Date(account.lastSyncAt).toLocaleString()}`
-                          : 'Never synced'}
-                      </p>
                     </div>
                     <div className="flex items-center gap-2 ml-4 shrink-0">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleSyncAccount(account)}
-                        disabled={syncingAccountId === account.id}
-                      >
-                        {syncingAccountId === account.id ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <RefreshCw className="h-3.5 w-3.5" />
-                        )}
-                        <span className="ml-1.5">Sync</span>
-                      </Button>
                       <Button
                         size="sm"
                         variant="ghost"
@@ -358,10 +297,6 @@ export function Settings() {
                 ))}
               </div>
             )}
-            <Button onClick={openTellerConnect} variant="outline">
-              <Link className="h-4 w-4 mr-2" />
-              Connect Account
-            </Button>
           </CardContent>
         </Card>
 
@@ -515,7 +450,7 @@ export function Settings() {
             </DialogTitle>
             <DialogDescription>
               Remove <strong>{accountToDelete?.institutionName}</strong> ({accountToDelete?.name})?
-              This will disconnect it from syncing.
+              Its imported transactions are kept unless you choose otherwise.
             </DialogDescription>
           </DialogHeader>
           <div className="py-2">
@@ -527,7 +462,7 @@ export function Settings() {
                 className="mt-0.5"
               />
               <div>
-                <p className="text-sm font-medium">Also delete synced transactions</p>
+                <p className="text-sm font-medium">Also delete this account's transactions</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   Remove all transactions imported from this account
                 </p>

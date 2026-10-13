@@ -76,13 +76,10 @@ export function makeRule(overrides: Partial<Rule> = {}): Rule {
 export function makeBankAccount(overrides: Partial<BankAccount> = {}): BankAccount {
   return {
     id: 'acct-1',
-    enrollmentId: 'enr-1',
-    accessToken: 'token-1',
     institutionName: 'Test Bank',
     name: 'Checking',
     type: 'depository',
     subtype: 'checking',
-    lastSyncAt: null,
     ...overrides,
   };
 }

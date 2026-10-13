@@ -1,8 +1,8 @@
 # simplebudget
 
-React + TypeScript + Vite SPA over Firebase Realtime Database. Bank sync via
-Teller, proxied through a Cloud Function (`functions/src/index.ts`) because the
-Teller API needs mutual TLS.
+React + TypeScript + Vite SPA over Firebase Realtime Database. Transactions are
+added by **CSV import** (`src/pages/Transactions.tsx`); there is no bank sync and
+no backend beyond Firebase.
 
 ## Commands
 
@@ -102,6 +102,13 @@ total `NaN`, which then silently renders as "No change".
 ## Not wired up
 
 - `public/` holds only `logo.svg`; the pre-React HTML app was removed.
+- Bank sync was removed when Teller shut down its API (Oct 2026). The Cloud
+  Function that proxied it, its mTLS certificate secrets and the dev proxy are
+  all gone. `useBankAccounts` survives **read-only**: existing records still
+  label already-imported transactions (the Account column and the transactions
+  search) and can be deleted, but nothing creates them. Stored records may still
+  carry dead `accessToken`/`enrollmentId` fields, deliberately absent from the
+  `BankAccount` type.
 - `server.js` serves `dist/` and duplicates `npm run preview`.
 - Row checkboxes in the transactions table have no bulk actions behind them.
 - Rule `matchText` is not editable after creation.
