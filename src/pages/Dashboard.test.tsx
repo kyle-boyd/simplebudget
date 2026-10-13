@@ -99,13 +99,28 @@ describe('Dashboard', () => {
     });
   });
 
+  it('reports categorization progress as "X of Y", not a bare total', async () => {
+    localStorage.setItem('selectedMonth', 'All Months');
+    seedUser({
+      categories: defaultCategories(),
+      transactions: [
+        makeTransaction({ Amount: -10, Category: 'Groceries', confirmed: true }),
+        makeTransaction({ Amount: -20, Category: 'Gas' }),
+        makeTransaction({ Amount: -30, Category: '' }),
+      ],
+    });
+    await renderPage(<Dashboard />);
+    expect(screen.getByText('Categorized')).toBeDefined();
+    expect(screen.getByText('2 of 3')).toBeDefined();
+  });
+
   it('applies the saved currency preference', async () => {
     seedSpending();
     seedUser({ settings: { currency: 'EUR' }, categories: defaultCategories() });
     await renderPage(<Dashboard />);
     // The Dashboard only formats currency inside chart tooltips, so assert the
-    // total transaction count renders instead and leave currency to the pages
-    // that display amounts directly.
-    expect(screen.getByText('Total Transactions')).toBeDefined();
+    // categorization progress label renders instead and leave currency to the
+    // pages that display amounts directly.
+    expect(screen.getByText('Categorized')).toBeDefined();
   });
 });

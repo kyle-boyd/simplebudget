@@ -25,7 +25,6 @@ import {
   ALL_MONTHS,
   filterByMonth,
   monthOptions,
-  parseTransactionDate,
 } from '@/lib/months';
 import { ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
 
@@ -93,40 +92,23 @@ export function Budget() {
   );
 
   /**
-   * Spend per subcategory. For a specific month that's the month's total; for
-   * "All Months" it's the average over the three most recent months that have
-   * transactions, so it stays comparable to the monthly budget beside it.
+   * Spend per subcategory: the actual total for the selected month, or the sum
+   * across every month for "All Months". (It previously divided the all-time
+   * total by the three most recent months — a stealth average that rendered
+   * under a "Spent" label, so one -$38.52 charge showed as $12.84.)
    */
   const spendingBySubcategory = useMemo(() => {
     const totals = new Map<string, number>();
 
-    const add = (name: string | undefined, amount: number, divisor: number) => {
+    const add = (name: string | undefined, amount: number) => {
       const key = name?.trim();
       if (!key || !Number.isFinite(amount)) return;
-      totals.set(key, (totals.get(key) || 0) + Math.abs(amount) / divisor);
+      totals.set(key, (totals.get(key) || 0) + Math.abs(amount));
     };
 
-    if (activeMonth !== ALL_MONTHS) {
-      for (const transaction of filteredTransactions) {
-        add(transaction.Category, transaction.Amount, 1);
-      }
-      return totals;
-    }
-
-    // The three most recent months (as year * 12 + month) that have transactions.
-    const monthsPresent = new Set<number>();
-    for (const transaction of transactions) {
-      const date = parseTransactionDate(transaction.Date);
-      if (date) monthsPresent.add(date.getFullYear() * 12 + date.getMonth());
-    }
-
-    const recentMonths = new Set([...monthsPresent].sort((a, b) => b - a).slice(0, 3));
-    if (recentMonths.size === 0) return totals;
-
-    for (const transaction of transactions) {
-      const date = parseTransactionDate(transaction.Date);
-      if (!date || !recentMonths.has(date.getFullYear() * 12 + date.getMonth())) continue;
-      add(transaction.Category, transaction.Amount, recentMonths.size);
+    const source = activeMonth === ALL_MONTHS ? transactions : filteredTransactions;
+    for (const transaction of source) {
+      add(transaction.Category, transaction.Amount);
     }
 
     return totals;

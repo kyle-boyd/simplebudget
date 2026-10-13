@@ -17,6 +17,7 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Loader2,
   Undo2,
 } from "lucide-react"
 
@@ -84,6 +85,8 @@ interface DataTableProps<TData, TValue> {
   externalGlobalFilter?: string
   /** External controlled value for category filter */
   externalCategoryFilter?: string
+  /** Show a loading placeholder instead of "No results." while data loads */
+  loading?: boolean
 }
 
 export function DataTable<TData, TValue>({
@@ -107,6 +110,7 @@ export function DataTable<TData, TValue>({
   hideSearchBar = false,
   externalGlobalFilter,
   externalCategoryFilter,
+  loading = false,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([])
   // Tanstack treats an empty order as "use the declared order".
@@ -285,11 +289,13 @@ export function DataTable<TData, TValue>({
                 <TableRow key={headerGroup.id}>
                   {headerGroup.headers.map((header, headerIndex) => {
                     return (
-                      <TableHead 
+                      <TableHead
                         key={header.id}
                         className={cn(
+                          "sticky top-0 z-20 bg-background",
                           headerIndex === 0 ? "pl-6" : "",
-                          compact && "px-2 py-1.5 h-9"
+                          compact && "px-2 py-1.5 h-9",
+                          (header.column.columnDef.meta as { className?: string } | undefined)?.className,
                         )}
                       >
                         {header.isPlaceholder
@@ -369,6 +375,7 @@ export function DataTable<TData, TValue>({
                             !isFirstCell && !compact ? "pl-3" : "",
                             compact && "px-2 py-1.5",
                             isFirstCell && !onSwipeRight && !compact ? "pl-6" : "",
+                            (cell.column.columnDef.meta as { className?: string } | undefined)?.className,
                           )}
                           style={isFirstCell && onSwipeRight ? { padding: 0 } : undefined}
                         >
@@ -417,7 +424,14 @@ export function DataTable<TData, TValue>({
                   colSpan={table.getVisibleFlatColumns().length || 1}
                   className="h-24 text-center"
                 >
-                  No results.
+                  {loading ? (
+                    <span className="flex items-center justify-center gap-2 text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading…
+                    </span>
+                  ) : (
+                    "No results."
+                  )}
                 </TableCell>
               </TableRow>
             )}

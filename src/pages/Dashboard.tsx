@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import { Layout } from '@/components/layout/Layout';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
+import { ChartContainer, ChartTooltip, type ChartConfig } from '@/components/ui/chart';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis } from 'recharts';
 import { useAuth } from '@/hooks/useAuth';
@@ -519,15 +519,28 @@ export function Dashboard() {
                           );
                         })}
                       </Pie>
-                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <ChartTooltip
+                        content={({ active, payload }) => {
+                          if (!active || !payload || payload.length === 0) return null;
+                          const entry = payload[0];
+                          return (
+                            <div className="rounded-lg border bg-background p-2 shadow-sm">
+                              <div className="flex items-center justify-between gap-4">
+                                <span className="text-sm font-medium">{entry.name}</span>
+                                <span className="text-sm font-mono">{entry.value}</span>
+                              </div>
+                            </div>
+                          );
+                        }}
+                      />
                     </PieChart>
                   </ChartContainer>
                   <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                     <span className="text-2xl font-semibold">
-                      {statusData.reduce((sum, entry) => sum + entry.value, 0)}
+                      {countsByStatus.current.confirmed + countsByStatus.current.unconfirmed} of {countsByStatus.current.total}
                     </span>
                     <span className="text-sm text-muted-foreground mt-1">
-                      Total Transactions
+                      Categorized
                     </span>
                   </div>
                 </div>

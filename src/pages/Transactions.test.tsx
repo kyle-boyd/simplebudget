@@ -3,6 +3,7 @@ import { Transactions } from './Transactions';
 import { pageText, renderPage, screen, waitFor } from '@/test/render';
 import {
   defaultCategories,
+  makeBankAccount,
   makeRule,
   makeTransaction,
   monthsAgo,
@@ -85,6 +86,25 @@ describe('Transactions', () => {
       await renderPage(<Transactions />);
       expect(screen.getByText('Mar 5, 2026')).toBeDefined();
     });
+
+    it('sorts by real date, not the MM/DD/YY string', async () => {
+      // Regression: the Date column had no sortingFn, so TanStack string-sorted
+      // and put "01/15/26" ahead of "06/15/25" when ascending.
+      seedUser({
+        transactions: [
+          makeTransaction({ Date: '01/15/26', Description: 'JANUARY ROW' }),
+          makeTransaction({ Date: '06/15/25', Description: 'JUNE ROW' }),
+        ],
+      });
+      const { user } = await renderPage(<Transactions />);
+
+      await user.click(screen.getAllByRole('button', { name: /Date/ })[0]);
+
+      await waitFor(() => {
+        const text = pageText();
+        expect(text.indexOf('JUNE ROW')).toBeLessThan(text.indexOf('JANUARY ROW'));
+      });
+    });
   });
 
   describe('currency', () => {
@@ -102,6 +122,31 @@ describe('Transactions', () => {
       seedUser({ transactions: [makeTransaction({ Amount: -42.5 })] });
       await renderPage(<Transactions />);
       expect(screen.getByText('-$42.50')).toBeDefined();
+    });
+  });
+
+  describe('search', () => {
+    it('matches on account and institution name', async () => {
+      // Regression: the account column had no accessor, so the global filter
+      // never saw the bank/institution text that is visible in the row.
+      seedUser({
+        bankAccounts: [makeBankAccount({ id: 'acct-1', institutionName: 'Chase', name: 'Checking' })],
+        transactions: [
+          makeTransaction({ Description: 'COSTCO', bankAccountId: 'acct-1' }),
+          makeTransaction({ Description: 'WALMART' }),
+        ],
+      });
+      const { user } = await renderPage(<Transactions />);
+
+      // Both the (lg:hidden) mobile and the desktop search inputs are in the
+      // jsdom tree; the desktop one — last in the DOM — drives the filter.
+      const searchInputs = screen.getAllByPlaceholderText('Search transactions...');
+      await user.type(searchInputs[searchInputs.length - 1], 'chase');
+
+      await waitFor(() => {
+        expect(screen.getByText('COSTCO')).toBeDefined();
+        expect(screen.queryByText('WALMART')).toBeNull();
+      });
     });
   });
 
