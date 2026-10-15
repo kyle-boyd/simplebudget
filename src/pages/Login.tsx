@@ -110,7 +110,7 @@ export function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+    <div className="min-h-screen flex items-center justify-center bg-sb-ground font-sb tabular-nums text-sb-text p-4">
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle>{isSignup ? 'Sign up' : 'Welcome'}</CardTitle>

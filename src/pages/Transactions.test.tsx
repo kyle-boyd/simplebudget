@@ -69,6 +69,57 @@ describe('Transactions', () => {
       await renderPage(<Transactions />);
       expect(screen.getByRole('button', { name: 'Next page' })).toHaveProperty('disabled', true);
     });
+
+    it('stays on the current page when a row is confirmed', async () => {
+      // Regression: TanStack's autoResetPageIndex fired on every write to the
+      // transactions list, so confirming a row on page 2 snapped back to page 1.
+      seedUser({ categories: defaultCategories(), transactions: manyTransactions(45) });
+      const { user } = await renderPage(<Transactions />);
+
+      await user.click(screen.getByRole('button', { name: 'Next page' }));
+      await waitFor(() => expect(screen.getByText(/Page 2 of 2/)).toBeDefined());
+
+      await user.click(screen.getAllByRole('button', { name: 'Confirm' })[0]);
+
+      await waitFor(() =>
+        expect(storedTransactions().some((t) => t.confirmed)).toBe(true)
+      );
+      expect(screen.getByText(/Page 2 of 2/)).toBeDefined();
+      expect(screen.getByText('MERCHANT 040')).toBeDefined();
+    });
+
+    it('stays on the current page when a category is changed', async () => {
+      seedUser({ categories: defaultCategories(), transactions: manyTransactions(45) });
+      const { user } = await renderPage(<Transactions />);
+
+      await user.click(screen.getByRole('button', { name: 'Next page' }));
+      await waitFor(() => expect(screen.getByText(/Page 2 of 2/)).toBeDefined());
+
+      const rowSelects = screen
+        .getAllByRole('combobox')
+        .filter((el) => el.textContent === 'Groceries');
+      await user.click(rowSelects[0]);
+      await user.click(await screen.findByRole('option', { name: 'Gas' }));
+
+      await waitFor(() =>
+        expect(storedTransactions().some((t) => t.Category === 'Gas')).toBe(true)
+      );
+      expect(screen.getByText(/Page 2 of 2/)).toBeDefined();
+    });
+
+    it('falls back to the last page when the filtered rows shrink', async () => {
+      seedUser({ categories: defaultCategories(), transactions: manyTransactions(45) });
+      const { user } = await renderPage(<Transactions />);
+
+      await user.click(screen.getByRole('button', { name: 'Next page' }));
+      await waitFor(() => expect(screen.getByText(/Page 2 of 2/)).toBeDefined());
+
+      const searchInputs = screen.getAllByPlaceholderText('Search transactions...');
+      await user.type(searchInputs[searchInputs.length - 1], 'MERCHANT 001');
+
+      await waitFor(() => expect(screen.getByText('MERCHANT 001')).toBeDefined());
+      expect(screen.getByText(/Page 1 of 1/)).toBeDefined();
+    });
   });
 
   describe('dates', () => {

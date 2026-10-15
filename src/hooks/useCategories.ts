@@ -15,6 +15,19 @@ export interface Category {
   amount?: number;
   subcategories: Subcategory[];
   isSystem?: boolean;
+  /**
+   * Fixed categories are recurring bills (rent, insurance, car payment): their
+   * spend is predictable and lands in a lump, so pacing a daily burn-up against
+   * them is meaningless. The Dashboard puts flexible spending in the hero/cards
+   * and summarises fixed ones as "bills paid". Missing means flexible — see
+   * `isFixedCategory` — so nothing silently drops off the hero.
+   */
+  kind?: 'fixed' | 'flexible';
+}
+
+/** A category counts as fixed only when explicitly marked; everything else is flexible. */
+export function isFixedCategory(category: Category): boolean {
+  return category.kind === 'fixed';
 }
 
 /**
@@ -119,11 +132,50 @@ export function useCategories(userId: string | null) {
   };
 
   const deleteSubcategory = async (categoryId: number, subcategoryId: number) => {
-    const updated = categories.map(c => 
+    const updated = categories.map(c =>
       c.id === categoryId
         ? { ...c, subcategories: (c.subcategories || []).filter(s => s.id !== subcategoryId) }
         : c
     );
+    await saveCategories(updated);
+  };
+
+  /**
+   * Reparent a subcategory. Transactions, rules and mappings reference a
+   * subcategory by *name*, and the name is unchanged by the move, so this needs
+   * no cascade — only which parent it rolls up under changes. Optional `updates`
+   * (e.g. a simultaneous rename/amount edit) are applied in the *same* write:
+   * `saveCategories` rewrites the whole list from this render's snapshot, so a
+   * separate `updateSubcategory` call afterwards would read the stale list and
+   * clobber the move.
+   */
+  const moveSubcategory = async (
+    fromCategoryId: number,
+    toCategoryId: number,
+    subcategoryId: number,
+    updates: Partial<Subcategory> = {}
+  ) => {
+    if (fromCategoryId === toCategoryId) {
+      if (Object.keys(updates).length > 0) {
+        await updateSubcategory(fromCategoryId, subcategoryId, updates);
+      }
+      return;
+    }
+
+    const source = categories.find(c => c.id === fromCategoryId);
+    const moved = (source?.subcategories || []).find(s => s.id === subcategoryId);
+    if (!moved) return;
+    const movedWithUpdates = { ...moved, ...updates };
+
+    const updated = categories.map(c => {
+      if (c.id === fromCategoryId) {
+        return { ...c, subcategories: (c.subcategories || []).filter(s => s.id !== subcategoryId) };
+      }
+      if (c.id === toCategoryId) {
+        return { ...c, subcategories: [...(c.subcategories || []), movedWithUpdates] };
+      }
+      return c;
+    });
     await saveCategories(updated);
   };
 
@@ -137,6 +189,7 @@ export function useCategories(userId: string | null) {
     addSubcategory,
     updateSubcategory,
     deleteSubcategory,
+    moveSubcategory,
   };
 }
 

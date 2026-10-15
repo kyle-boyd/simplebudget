@@ -122,6 +122,34 @@ describe('Budget', () => {
     });
   });
 
+  describe('moving a subcategory', () => {
+    it('reparents it without orphaning its transactions', async () => {
+      // The move is name-preserving, so transactions filed under the
+      // subcategory keep resolving - only the parent it rolls up under changes.
+      seedUser({
+        categories: defaultCategories(),
+        transactions: [makeTransaction({ id: 'gas', Amount: -40, Category: 'Gas' })],
+      });
+      const { user } = await renderPage(<Budget />);
+
+      await user.click(openEditSheetFor('Gas'));
+
+      await user.click(await waitFor(() => screen.getByLabelText('Category')));
+      await user.click(await screen.findByRole('option', { name: 'Food' }));
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+
+      await waitFor(() => {
+        const food = storedCategories().find((c) => c.name === 'Food');
+        expect((food?.subcategories ?? []).map((s) => s.name)).toContain('Gas');
+      });
+
+      const transportation = storedCategories().find((c) => c.name === 'Transportation');
+      expect((transportation?.subcategories ?? []).map((s) => s.name)).not.toContain('Gas');
+      // The transaction still points at the subcategory by name.
+      expect(storedTransactions().find((t) => t.id === 'gas')?.Category).toBe('Gas');
+    });
+  });
+
   describe('deleting a subcategory', () => {
     it('warns how many transactions it would un-file', async () => {
       seedUser({

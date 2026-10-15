@@ -2,6 +2,7 @@ import * as React from "react"
 import {
   ColumnDef,
   ColumnFiltersState,
+  PaginationState,
   SortingState,
   VisibilityState,
   flexRender,
@@ -132,6 +133,10 @@ export function DataTable<TData, TValue>({
   }), [columnVisibility, forceHiddenColumnIds])
   const [rowSelection, setRowSelection] = React.useState({})
   const [globalFilter, setGlobalFilter] = React.useState("")
+  const [pagination, setPagination] = React.useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: 30,
+  })
 
   // Sync external global filter
   React.useEffect(() => {
@@ -179,12 +184,13 @@ export function DataTable<TData, TValue>({
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
     onGlobalFilterChange: setGlobalFilter,
+    onPaginationChange: setPagination,
     globalFilterFn: "includesString",
-    initialState: {
-      pagination: {
-        pageSize: 30,
-      },
-    },
+    // Tanstack resets the page index whenever `data` changes identity, and every
+    // transaction edit rewrites the whole list, so confirming a row or changing
+    // its category on page 3 snapped the table back to page 1. Pagination is
+    // controlled here instead; the effects below reset it when it really has to.
+    autoResetPageIndex: false,
     state: {
       sorting,
       columnFilters,
@@ -192,6 +198,7 @@ export function DataTable<TData, TValue>({
       columnOrder: columnOrderState,
       rowSelection,
       globalFilter,
+      pagination,
     },
   })
 
@@ -211,6 +218,33 @@ export function DataTable<TData, TValue>({
         : without
     })
   }, [initialCategoryFilter, categoryFilterKey])
+
+  // With the auto-reset off, a narrowing filter would leave the table parked on
+  // a page that no longer exists, so go back to the first page whenever the
+  // active filters change. Compared by value, not identity: the external-filter
+  // effects above rebuild `columnFilters` on every run.
+  const filterSignature = JSON.stringify([
+    globalFilter,
+    [...columnFilters]
+      .map((filter) => [filter.id, filter.value])
+      .sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+  ])
+  const lastFilterSignature = React.useRef(filterSignature)
+  React.useEffect(() => {
+    if (lastFilterSignature.current === filterSignature) return
+    lastFilterSignature.current = filterSignature
+    setPagination((prev) => (prev.pageIndex === 0 ? prev : { ...prev, pageIndex: 0 }))
+  }, [filterSignature])
+
+  // Rows can also disappear with the filters untouched - a row stops matching
+  // the active filter after an edit, or the list shrinks elsewhere. Fall back to
+  // the last page that still has rows rather than rendering "No results."
+  const pageCount = table.getPageCount()
+  React.useEffect(() => {
+    if (pageCount > 0 && pagination.pageIndex > pageCount - 1) {
+      setPagination((prev) => ({ ...prev, pageIndex: pageCount - 1 }))
+    }
+  }, [pageCount, pagination.pageIndex])
 
   const categoryFilterValue = categoryFilterKey
     ? (table.getColumn(categoryFilterKey)?.getFilterValue() as string | undefined) ?? "all"
@@ -281,7 +315,7 @@ export function DataTable<TData, TValue>({
           )}
         </div>
       </div>
-      <div className="rounded-md border overflow-auto flex-1 min-h-0">
+      <div className="rounded-sb border border-sb-hairline bg-sb-surface overflow-auto flex-1 min-h-0">
         <Table className="">
           {!compact && (
             <TableHeader>
@@ -325,7 +359,7 @@ export function DataTable<TData, TValue>({
                   <TableRow
                     key={row.id}
                     data-state={row.getIsSelected() && "selected"}
-                    className={`${onRowClick ? "cursor-pointer" : ""} ${getRowClassName?.(row.original) || ""}`}
+                    className={`group/row ${onRowClick ? "cursor-pointer" : ""} ${getRowClassName?.(row.original) || ""}`}
                     onClick={() => {
                       if (swipeTriggeredRef.current) return
                       onRowClick?.(row.original)

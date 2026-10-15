@@ -19,7 +19,7 @@ export function Layout({ children }: LayoutProps) {
       </div>
 
       {/* Mobile Header */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 z-50 h-16 bg-background border-b flex items-center px-4">
+      <div className="lg:hidden fixed top-0 left-0 right-0 z-50 h-16 bg-sb-surface border-b border-sb-hairline flex items-center px-4">
         <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
           <SheetTrigger asChild>
             <Button variant="ghost" size="icon">
@@ -34,7 +34,7 @@ export function Layout({ children }: LayoutProps) {
       </div>
 
       {/* Main Content */}
-      <main className="flex-1 px-4 lg:px-6 pb-6 pt-16 lg:pt-0 overflow-auto flex flex-col">
+      <main className="flex-1 px-4 lg:px-6 pb-6 pt-16 lg:pt-0 overflow-auto flex flex-col bg-sb-ground font-sb tabular-nums text-sb-text">
         {children}
       </main>
     </div>

@@ -67,12 +67,30 @@ export default {
   				'3': 'hsl(var(--chart-3))',
   				'4': 'hsl(var(--chart-4))',
   				'5': 'hsl(var(--chart-5))'
+  			},
+  			sb: {
+  				ground: 'var(--sb-ground)',
+  				surface: 'var(--sb-surface)',
+  				hairline: 'var(--sb-hairline)',
+  				text: 'var(--sb-text)',
+  				muted: 'var(--sb-muted)',
+  				graphite: 'var(--sb-graphite)',
+  				over: 'var(--sb-over)',
+  				'over-text': 'var(--sb-over-text)',
+  				'over-bg': 'var(--sb-over-bg)',
+  				positive: 'var(--sb-positive)',
+  				'positive-text': 'var(--sb-positive-text)',
+  				'positive-bg': 'var(--sb-positive-bg)'
   			}
+  		},
+  		fontFamily: {
+  			sb: 'var(--sb-font)'
   		},
   		borderRadius: {
   			lg: 'var(--radius)',
   			md: 'calc(var(--radius) - 2px)',
-  			sm: 'calc(var(--radius) - 4px)'
+  			sm: 'calc(var(--radius) - 4px)',
+  			sb: 'var(--sb-radius)'
   		},
   		keyframes: {
   			'accordion-down': {

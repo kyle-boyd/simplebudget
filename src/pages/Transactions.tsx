@@ -24,6 +24,7 @@ import { useCategoryMappings } from '@/hooks/useCategoryMappings';
 import { useCurrency } from '@/hooks/useUserSettings';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { categorize, ruleMatches } from '@/lib/categorization';
+import { partitionDuplicates } from '@/lib/duplicates';
 import {
   ALL_MONTHS,
   filterByMonth,
@@ -31,11 +32,11 @@ import {
   monthOptions,
   parseTransactionDate,
 } from '@/lib/months';
-import { createTransactionId, parseDate, detectCategoryColumn, scoreCategoryMatch, detectDateColumn, detectAmountColumn, detectDescriptionColumn } from '@/lib/utils';
+import { createTransactionId, parseDate, detectCategoryColumn, scoreCategoryMatch, detectDateColumn, detectAmountColumn, detectDescriptionColumn, detectTypeColumn, flowFromType } from '@/lib/utils';
 import Papa from 'papaparse';
 
 const SELECTED_MONTH_KEY = 'selectedMonth';
-const CSV_FIELDS = ['Date', 'Amount', 'Description', 'Category'] as const;
+const CSV_FIELDS = ['Date', 'Amount', 'Description', 'Category', 'Type'] as const;
 
 type CsvRow = Record<string, string | undefined>;
 
@@ -114,9 +115,14 @@ export function Transactions() {
    * previously only ever applied to the single transaction they were created
    * from, so the "applies to future transactions" promise never held.
    */
+  const subcategoryNames = useMemo(
+    () => categories.flatMap((category) => category.subcategories.map((sub) => sub.name)),
+    [categories]
+  );
+
   const applyCategorization = useCallback(
-    (txns: Transaction[]) => categorize(txns, rules, mappings),
-    [rules, mappings]
+    (txns: Transaction[]) => categorize(txns, rules, mappings, subcategoryNames),
+    [rules, mappings, subcategoryNames]
   );
 
   // Save to localStorage whenever selectedMonth changes
@@ -184,17 +190,20 @@ export function Transactions() {
         let detectedAmountColumn = '';
         let detectedDescriptionColumn = '';
         let detectedCategoryColumn = '';
+        let detectedTypeColumn = '';
 
         let bestDateScore = 0;
         let bestAmountScore = 0;
         let bestDescriptionScore = 0;
         let bestCategoryScore = 0;
+        let bestTypeScore = 0;
 
-        // Detect by column name for Date, Amount, Description
+        // Detect by column name for Date, Amount, Description, Type
         for (const header of headers) {
           const dateScore = detectDateColumn(header);
           const amountScore = detectAmountColumn(header);
           const descScore = detectDescriptionColumn(header);
+          const typeScore = detectTypeColumn(header);
 
           if (dateScore > bestDateScore) {
             bestDateScore = dateScore;
@@ -207,6 +216,12 @@ export function Transactions() {
           if (descScore > bestDescriptionScore) {
             bestDescriptionScore = descScore;
             detectedDescriptionColumn = header;
+          }
+          // "Debit"/"Credit" also score as amount columns, so only treat a
+          // header as Type when it out-scores its amount reading.
+          if (typeScore > bestTypeScore && typeScore >= amountScore) {
+            bestTypeScore = typeScore;
+            detectedTypeColumn = header;
           }
         }
 
@@ -258,6 +273,8 @@ export function Transactions() {
           // Only pre-fill Category when a column was actually recognised;
           // defaulting to the 4th column mis-tagged unrelated data.
           Category: detectedCategoryColumn || 'none',
+          // Optional: direction of money. Absent for exports that lack it.
+          Type: detectedTypeColumn || 'none',
         });
         setShowMappingModal(true);
       },
@@ -271,6 +288,7 @@ export function Transactions() {
     const amountField = mappedField('Amount');
     const descriptionField = mappedField('Description');
     const categoryField = mappedField('Category');
+    const typeField = mappedField('Type');
 
     if (!dateField || !amountField) {
       setCsvError('Pick which columns hold the date and the amount.');
@@ -312,13 +330,23 @@ export function Transactions() {
           const occurrence = seen.get(key) ?? 0;
           seen.set(key, occurrence + 1);
 
+          const flow = typeField ? flowFromType(row[typeField]) : undefined;
+
           newTransactions.push({
             id: createTransactionId({ Date: date, Description: description, Amount: amount }, occurrence),
             Date: date,
             Amount: amount,
             Description: description,
-            Category: categoryField ? row[categoryField] || '' : '',
+            // The CSV's own category goes to importedCategory, never straight to
+            // Category. Writing it to Category disabled every rule, because
+            // categorize() skips rows that already have one - and it filed a
+            // foreign taxonomy ("Shopping", "Fast Food") under a name that is not
+            // one of the user's subcategories, so the row rendered as invalid and
+            // dropped out of budget totals. Rules run first, then the user's
+            // categoryMappings translate this label.
+            importedCategory: categoryField ? row[categoryField] || '' : '',
             confirmed: false,
+            ...(flow ? { flow } : {}),
           });
         }
 
@@ -327,11 +355,54 @@ export function Transactions() {
           return;
         }
 
-        const added = await addTransactions(applyCategorization(newTransactions));
+        // A second export of the same account words the same purchase
+        // differently ("Amazon" vs "AMAZON MKTPL*MP6CQ6F53"), so it hashes to a
+        // different id and the id-based check below waves it through. That is
+        // how this database accumulated 1,834 duplicate pairs - roughly 70% of
+        // all rows - and doubled every budget total. Match on date, amount and
+        // a normalised merchant instead, and drop what overlaps.
+        const { fresh, duplicates: overlapping } = partitionDuplicates(
+          newTransactions,
+          transactions
+        );
+
+        if (fresh.length === 0) {
+          setCsvError(
+            `Every row in that file matches a transaction you already have (${overlapping.length} checked). Nothing was imported.`
+          );
+          return;
+        }
+
+        const added = await addTransactions(applyCategorization(fresh));
+
+        // Backfill direction onto rows imported before `flow` existed. Re-importing
+        // the same file skips the already-present rows as duplicates, so this is
+        // the only way those older rows ever learn they were income/transfers
+        // rather than spending. Only fills a missing `flow`, never overwrites one,
+        // so a re-import can't clobber a direction already on a row.
+        let backfilled = 0;
+        const flowById = new Map<string, 'in' | 'out'>();
+        for (const transaction of newTransactions) {
+          if (transaction.flow) flowById.set(transaction.id, transaction.flow);
+        }
+        if (flowById.size > 0) {
+          await mutateTransactions(current =>
+            current.map(transaction => {
+              const flow = flowById.get(transaction.id);
+              if (!flow || transaction.flow) return transaction;
+              backfilled++;
+              return { ...transaction, flow };
+            })
+          );
+        }
 
         const parts = [`Imported ${added} transaction${added === 1 ? '' : 's'}`];
-        const duplicates = newTransactions.length - added;
+        const duplicates = fresh.length - added;
         if (duplicates > 0) parts.push(`${duplicates} already present`);
+        if (overlapping.length > 0) {
+          parts.push(`${overlapping.length} skipped as already imported under a different description`);
+        }
+        if (backfilled > 0) parts.push(`${backfilled} updated with direction`);
         if (skipped > 0) parts.push(`${skipped} skipped (unreadable date or amount)`);
 
         setImportSummary(parts.join(' · '));
@@ -608,7 +679,9 @@ export function Transactions() {
       accessorKey: "confirmed",
       // Pin the actions column to the right edge on desktop so Confirm/Unconfirm
       // stay reachable when the table overflows horizontally.
-      meta: { className: "lg:sticky lg:right-0 bg-background" },
+      // Pinned cell must follow the row's hover/selected highlight, or it reads
+      // as a detached white block when the rest of the row tints on hover.
+      meta: { className: "lg:sticky lg:right-0 bg-sb-surface group-hover/row:bg-muted/50 group-data-[state=selected]/row:bg-muted" },
       header: () => {
         return (
           <div className="text-center">
@@ -638,12 +711,10 @@ export function Transactions() {
               </div>
               <div className="flex justify-center">
                 {transaction.confirmed ? (
-                  <Badge variant="outline" className="flex items-center gap-1.5 bg-green-50 dark:bg-green-950">
-                    <div className="h-3.5 w-3.5 rounded-full bg-green-600 dark:bg-green-400 flex items-center justify-center">
-                      <Check className="h-2 w-2 text-white stroke-[3]" />
-                    </div>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-sb-positive-bg px-2.5 py-1 text-xs font-medium text-sb-positive-text">
+                    <Check className="h-3 w-3 stroke-[3]" />
                     Confirmed
-                  </Badge>
+                  </span>
                 ) : (
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -695,8 +766,8 @@ export function Transactions() {
         />
 
         {/* Mobile Header */}
-        <div className="lg:hidden sticky top-0 z-10 flex items-center justify-between bg-background border-b -mx-4 px-4 py-3">
-          <h1 className="font-medium">Transactions</h1>
+        <div className="lg:hidden sticky top-0 z-10 flex items-center justify-between bg-sb-ground/90 backdrop-blur border-b border-sb-hairline -mx-4 px-4 py-3">
+          <h1 className="text-xl font-bold tracking-tight">Transactions</h1>
           <div className="flex items-center gap-1">
             <Button variant="ghost" size="icon" onClick={() => setShowRulesPanel(true)} className="relative">
               <ListFilter className="h-4 w-4" />
@@ -749,8 +820,8 @@ export function Transactions() {
         </div>
 
         {/* Desktop Header */}
-        <div className="hidden lg:flex sticky top-0 z-10 h-16 justify-between items-center bg-background border-b -mx-6 px-6">
-          <h1 className="font-medium">Transactions</h1>
+        <div className="hidden lg:flex sticky top-0 z-10 h-16 justify-between items-center bg-sb-ground/90 backdrop-blur border-b border-sb-hairline -mx-6 px-6">
+          <h1 className="text-xl font-bold tracking-tight">Transactions</h1>
           <div className="flex items-center gap-4">
             <Select value={activeMonth} onValueChange={setSelectedMonth}>
               <SelectTrigger className="w-[180px]">
@@ -819,7 +890,7 @@ export function Transactions() {
         </div>
       )}
 
-      <div className="lg:flex lg:items-start lg:gap-3 min-h-0 flex-1 lg:mt-4">
+      <div className="flex flex-col lg:flex-row lg:gap-3 min-h-0 flex-1 lg:mt-4">
         <div
           className={`flex-1 min-w-0 transition-[padding,max-width] duration-300 flex flex-col min-h-0 ${
             isEditPanelOpen && selectedTransaction ? 'lg:pr-6' : ''

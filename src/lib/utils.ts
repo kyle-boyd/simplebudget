@@ -210,6 +210,42 @@ export function detectAmountColumn(columnName: string): number {
 }
 
 /**
+ * Detects if a CSV column name is likely to hold the debit/credit direction.
+ * Amounts are stored as positive magnitudes, so this column is the only signal
+ * that distinguishes income and transfers from spending.
+ */
+export function detectTypeColumn(columnName: string): number {
+  const normalized = columnName.toLowerCase().trim();
+  const typeKeywords = ['type', 'transaction type', 'direction', 'debit/credit', 'dr/cr'];
+
+  if (typeKeywords.includes(normalized)) {
+    return 100;
+  }
+
+  for (const keyword of typeKeywords) {
+    if (normalized.includes(keyword)) {
+      return 50;
+    }
+  }
+
+  return 0;
+}
+
+/**
+ * Maps a raw CSV `Type` value to a transaction flow. `Credit` means money in
+ * (income, refund, transfer); `Debit` means money out (spending). Anything we
+ * don't recognise returns `undefined`, so the row is treated as spending rather
+ * than guessed at.
+ */
+export function flowFromType(rawType: string | undefined | null): 'in' | 'out' | undefined {
+  const normalized = (rawType || '').trim().toLowerCase();
+  if (!normalized) return undefined;
+  if (normalized.startsWith('credit') || normalized === 'cr' || normalized === 'c') return 'in';
+  if (normalized.startsWith('debit') || normalized === 'dr' || normalized === 'd') return 'out';
+  return undefined;
+}
+
+/**
  * Detects if a CSV column name is likely to be a description column
  */
 export function detectDescriptionColumn(columnName: string): number {

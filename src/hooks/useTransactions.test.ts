@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { useTransactions } from './useTransactions';
+import * as rtdb from '@/test/fakes/firebase-database';
 import { fakeDb } from '@/test/fakes/firebase-database';
 import { TEST_UID, makeTransaction, seedUser, storedTransactions } from '@/test/factories';
 import { TEST_NOW } from '@/test/setup';
@@ -49,6 +50,42 @@ describe('useTransactions', () => {
       const stored = storedTransactions();
       expect(stored.find((t) => t.id === 'a')?.Category).toBe('Groceries');
       expect(stored.find((t) => t.id === 'b')?.Category).toBe('Gas');
+    });
+
+    it('keeps every edit in a rapid burst even when get() lags the last write', async () => {
+      // Regression: the per-user queue serialised edits but each one re-read the
+      // list with get(). In the real SDK get() can return a value that still
+      // lags the write just before it (the local cache syncs behind the server
+      // ack), so a burst of edits all started from the same stale base and every
+      // edit but the last was silently dropped — "it briefly showed as done,
+      // then reverted". Model that here: get() always returns the seeded list.
+      const txns = [
+        makeTransaction({ id: 'a' }),
+        makeTransaction({ id: 'b' }),
+        makeTransaction({ id: 'c' }),
+      ];
+      const stale = txns.map((t) => ({ ...t }));
+      const spy = vi.spyOn(rtdb, 'get').mockResolvedValue({
+        exists: () => true,
+        val: () => stale,
+        key: 'transactions',
+      } as never);
+
+      const { result } = await mountHook(txns);
+
+      // Fire-and-forget, the way the table's onClick handlers call these.
+      await act(async () => {
+        result.current.updateTransaction('a', { Category: 'Groceries' });
+        result.current.toggleConfirm('b');
+        result.current.updateTransaction('c', { Category: 'Gas' });
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+
+      const stored = storedTransactions();
+      expect(stored.find((t) => t.id === 'a')?.Category).toBe('Groceries');
+      expect(stored.find((t) => t.id === 'b')?.confirmed).toBe(true);
+      expect(stored.find((t) => t.id === 'c')?.Category).toBe('Gas');
+      spy.mockRestore();
     });
 
     it('leaves other transactions untouched', async () => {

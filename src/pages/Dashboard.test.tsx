@@ -1,126 +1,131 @@
-import { describe, it, expect } from 'vitest';
+import { beforeEach, describe, it, expect } from 'vitest';
+import type { Category } from '@/hooks/useCategories';
 import { Dashboard } from './Dashboard';
 import { pageText, renderPage, screen } from '@/test/render';
-import { defaultCategories, makeTransaction, monthLabel, monthsAgo, seedUser } from '@/test/factories';
+import { makeTransaction, monthsAgo, seedUser } from '@/test/factories';
 
 /**
- * Spend that lands inside the trailing chart window:
- *   this month     70.10  (52.10 groceries + 18 restaurants)
- *   previous month 640.00 (600 groceries + 40 gas)
- * plus refunds filed under a subcategory of the system "Hide from Budget"
- * category, which must be excluded from every total.
+ * The clock is frozen at 11 Oct 2026 — day 11 of a 31-day month. Food (budget
+ * 310) and Transportation (budget 62) are flexible; Rent is a fixed bill. The
+ * round budgets make the day-11 pace maths land on whole numbers:
+ *   Food spent 132 → projected 372 (over by 62)
+ *   hero spent 154 → projected 434 (over by 62)
  */
-function seedSpending() {
+function budgetCategories(): Category[] {
+  return [
+    {
+      id: 1,
+      name: 'Hide from Budget',
+      isSystem: true,
+      subcategories: [
+        { id: 11, name: 'Hide from Budget', isSystem: true, amount: 0 },
+        { id: 12, name: 'Reimbursements', amount: 0 },
+      ],
+    },
+    {
+      id: 2,
+      name: 'Food',
+      kind: 'flexible',
+      subcategories: [
+        { id: 21, name: 'Groceries', amount: 200 },
+        { id: 22, name: 'Restaurants', amount: 110 },
+      ],
+    },
+    { id: 3, name: 'Transportation', kind: 'flexible', subcategories: [{ id: 31, name: 'Gas', amount: 62 }] },
+    { id: 4, name: 'Rent', kind: 'fixed', amount: 1500, subcategories: [] },
+  ];
+}
+
+function seedOverPace() {
   seedUser({
-    categories: defaultCategories(),
+    categories: budgetCategories(),
     transactions: [
-      makeTransaction({ Date: monthsAgo(0, 15), Amount: -52.1, Description: 'KROGER', Category: 'Groceries', confirmed: true }),
-      makeTransaction({ Date: monthsAgo(0, 16), Amount: -18, Description: 'CHIPOTLE', Category: 'Restaurants' }),
-      makeTransaction({ Date: monthsAgo(1, 15), Amount: -40, Description: 'SHELL', Category: 'Gas', confirmed: true }),
-      makeTransaction({ Date: monthsAgo(1, 17), Amount: -600, Description: 'KROGER', Category: 'Groceries' }),
-      makeTransaction({ Date: monthsAgo(0, 3), Amount: 900, Description: 'REFUND', Category: 'Reimbursements' }),
-      makeTransaction({ Date: monthsAgo(1, 8), Amount: 300, Description: 'PRIOR REFUND', Category: 'Reimbursements' }),
+      makeTransaction({ Date: monthsAgo(0, 5), Amount: -100, Category: 'Groceries' }),
+      makeTransaction({ Date: monthsAgo(0, 8), Amount: -32, Category: 'Restaurants' }),
+      makeTransaction({ Date: monthsAgo(0, 3), Amount: -22, Category: 'Gas' }),
+      makeTransaction({ Date: monthsAgo(0, 1), Amount: -1500, Category: 'Rent' }),
+      makeTransaction({ Date: monthsAgo(0, 2), Amount: -50, Category: '' }),
+      // A big uncategorized paycheck: must not inflate "not counted" or the count.
+      makeTransaction({ Date: monthsAgo(0, 4), Amount: 2000, Category: '', flow: 'in' }),
     ],
   });
 }
 
 describe('Dashboard', () => {
-  it('renders with no data at all', async () => {
+  beforeEach(() => localStorage.clear());
+
+  it('renders the current month with no data and no NaN', async () => {
     seedUser({ transactions: [] });
     await renderPage(<Dashboard />);
-    expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeDefined();
-    expect(pageText()).not.toMatch(/NaN|Invalid Date/);
+    expect(screen.getByRole('heading', { level: 1, name: 'October' })).toBeDefined();
+    expect(pageText()).toContain('Day 11 of 31');
+    expect(pageText()).not.toMatch(/NaN|Invalid Date|undefined/);
   });
 
-  describe('budget vs actual trend', () => {
-    it('compares the last two months of the trailing window', async () => {
-      // Regression: the trend indexed the window array by calendar month
-      // number (9 in October), reading past the end of a 3- or 6-month window,
-      // so it always reported "Insufficient data".
-      seedSpending();
-      await renderPage(<Dashboard />);
-      expect(pageText()).not.toMatch(/Insufficient data|No previous data/);
-      // 70.10 against 640.00 is an 89.0% drop.
-      expect(pageText()).toMatch(/Trending down by 89\.0%/);
-    });
-
-    it('names the month it compared against', async () => {
-      seedSpending();
-      await renderPage(<Dashboard />);
-      const previousShortMonth = new Date(2026, 8).toLocaleString('en-US', { month: 'short' });
-      expect(pageText()).toContain(`Compared to ${previousShortMonth}`);
-    });
+  it('shows the flexible hero over-pace headline, naming the driver', async () => {
+    seedOverPace();
+    await renderPage(<Dashboard />);
+    expect(screen.getByRole('heading', { level: 2, name: /Headed \$62 over/ })).toBeDefined();
+    expect(pageText()).toContain('Over pace');
+    expect(pageText()).toContain('Food'); // the driver
   });
 
-  describe('monthly spending trend', () => {
-    it('is not poisoned by a transaction filed under the system category', async () => {
-      // Regression: a subcategory of "Hide from Budget" fell through to its
-      // parent, which had no entry in the totals map, so `undefined + amount`
-      // turned the whole total into NaN. The footer then silently claimed
-      // "No change" because `NaN > 0` is false.
-      seedSpending();
-      localStorage.setItem('selectedMonth', monthLabel(0));
-      await renderPage(<Dashboard />);
-
-      const text = pageText();
-      expect(text).not.toMatch(/NaN/);
-      const section = text.slice(text.indexOf('Monthly Spending by Category'));
-      expect(section).toMatch(/Trending down by 89\.0%/);
-      expect(section).not.toMatch(/^.*?No change/);
-    });
-
-    it('leaves hidden categories out of the chart', async () => {
-      seedSpending();
-      await renderPage(<Dashboard />);
-      expect(pageText()).not.toContain('Reimbursements');
-      expect(pageText()).not.toContain('Hide from Budget');
-    });
+  it('counts only uncategorized spending in the to-do row, excluding income', async () => {
+    seedOverPace();
+    await renderPage(<Dashboard />);
+    expect(pageText()).toContain('1 transaction needs a category');
+    expect(pageText()).toContain('$50 not counted');
+    expect(pageText()).not.toContain('$2,050');
+    expect(screen.getByRole('link', { name: 'Categorize' })).toBeDefined();
   });
 
-  describe('month picker', () => {
-    it('offers no malformed option when a date will not parse', async () => {
-      seedUser({
-        transactions: [
-          makeTransaction({ Date: 'not-a-date', Category: 'Groceries' }),
-          makeTransaction({ Date: monthsAgo(0), Category: 'Groceries' }),
-        ],
-      });
-      await renderPage(<Dashboard />);
-      expect(pageText()).not.toMatch(/undefined/);
-    });
-
-    it('falls back to All Months when the stored month no longer has data', async () => {
-      // The month is shared across pages via localStorage, so it can point at
-      // a month that has since been emptied.
-      localStorage.setItem('selectedMonth', 'March, 1999');
-      seedSpending();
-      await renderPage(<Dashboard />);
-      expect(screen.getAllByText('All Months').length).toBeGreaterThan(0);
-    });
+  it('summarises fixed bills separately from the flexible hero', async () => {
+    seedOverPace();
+    await renderPage(<Dashboard />);
+    expect(pageText()).toMatch(/Fixed bills\s*\$1,500\s*of\s*\$1,500\s*paid/);
   });
 
-  it('reports categorization progress as "X of Y", not a bare total', async () => {
-    localStorage.setItem('selectedMonth', 'All Months');
+  it('shows per-category cards riskiest first with the $/day badge only when over pace', async () => {
+    seedOverPace();
+    await renderPage(<Dashboard />);
+    const text = pageText();
+    // Food (over) ahead of Transportation (on pace) in the DOM order.
+    expect(text.indexOf('Food')).toBeLessThan(text.indexOf('Transportation'));
+    expect(text).toContain('/day left'); // Food is over pace
+    expect(text).toContain('On pace'); // Transportation
+    // Fixed and hidden categories never appear as flexible cards.
+    expect(text).not.toContain('Rent');
+    expect(text).not.toContain('Reimbursements');
+  });
+
+  it('shows "All caught up" when nothing needs a category', async () => {
     seedUser({
-      categories: defaultCategories(),
-      transactions: [
-        makeTransaction({ Amount: -10, Category: 'Groceries', confirmed: true }),
-        makeTransaction({ Amount: -20, Category: 'Gas' }),
-        makeTransaction({ Amount: -30, Category: '' }),
-      ],
+      categories: budgetCategories(),
+      transactions: [makeTransaction({ Date: monthsAgo(0, 5), Amount: -100, Category: 'Groceries' })],
     });
     await renderPage(<Dashboard />);
-    expect(screen.getByText('Categorized')).toBeDefined();
-    expect(screen.getByText('2 of 3')).toBeDefined();
+    expect(pageText()).toContain('All caught up');
+    expect(pageText()).not.toMatch(/needs? a category/);
   });
 
-  it('applies the saved currency preference', async () => {
-    seedSpending();
-    seedUser({ settings: { currency: 'EUR' }, categories: defaultCategories() });
-    await renderPage(<Dashboard />);
-    // The Dashboard only formats currency inside chart tooltips, so assert the
-    // categorization progress label renders instead and leave currency to the
-    // pages that display amounts directly.
-    expect(screen.getByText('Categorized')).toBeDefined();
+  describe('month stepper', () => {
+    it('disables "This month" while on the current month', async () => {
+      seedOverPace();
+      await renderPage(<Dashboard />);
+      const button = screen.getByRole('button', { name: 'This month' }) as HTMLButtonElement;
+      expect(button.disabled).toBe(true);
+    });
+
+    it('steps to a past month and shows the final result without a day counter', async () => {
+      seedUser({
+        categories: budgetCategories(),
+        transactions: [makeTransaction({ Date: monthsAgo(1, 10), Amount: -400, Category: 'Groceries' })],
+      });
+      const { user } = await renderPage(<Dashboard />);
+      await user.click(screen.getByRole('button', { name: 'Previous month' }));
+      expect(screen.getByRole('heading', { level: 1, name: 'September' })).toBeDefined();
+      expect(pageText()).not.toMatch(/Day \d+ of/);
+      expect(pageText()).toContain('over budget'); // 400 spent of 310 → final-over
+    });
   });
 });

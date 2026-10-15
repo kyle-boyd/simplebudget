@@ -37,6 +37,29 @@
     --sidebar-accent-foreground: 240 5.9% 10%;
     --sidebar-border: 220 13% 91%;
     --sidebar-ring: 0 0% 20%;
+
+    /*
+     * SoftRefined dashboard tokens. Stored as raw colour values (not the HSL
+     * triplets the shadcn tokens above use) because several are rgba, and they
+     * are referenced directly in tailwind.config.js rather than through hsl().
+     * Colour is reserved for attention: coral = over, teal = positive,
+     * everything else graphite/grey. #088F8F fails contrast as small text, so
+     * it is a fill only — the -text token is the darker value for text.
+     */
+    --sb-ground: #f5f5f7;
+    --sb-surface: #ffffff;
+    --sb-hairline: rgba(0, 0, 0, 0.06);
+    --sb-text: #1d1d1f;
+    --sb-muted: #6e6e73;
+    --sb-graphite: #3a3a3c;
+    --sb-over: #f0614a;
+    --sb-over-text: #b42b17;
+    --sb-over-bg: rgba(240, 97, 74, 0.12);
+    --sb-positive: #088f8f;
+    --sb-positive-text: #067373;
+    --sb-positive-bg: rgba(8, 143, 143, 0.1);
+    --sb-radius: 1rem;
+    --sb-font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Geist', 'Inter', system-ui, sans-serif;
   }
 
   .dark {
@@ -81,7 +104,8 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-family: "Figtree", sans-serif;
+    font-family: var(--sb-font);
+    -webkit-font-smoothing: antialiased;
   }
 }
 

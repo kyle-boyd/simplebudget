@@ -2,6 +2,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { Transactions } from './pages/Transactions';
+import { Review } from './pages/Review';
+import { Rules } from './pages/Rules';
 import { Budget } from './pages/Budget';
 import { Settings } from './pages/Settings';
 import { useAuth } from './hooks/useAuth';
@@ -51,10 +53,26 @@ function App() {
           }
         />
         <Route
+          path="/review"
+          element={
+            <ProtectedRoute>
+              <Review />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/budget"
           element={
             <ProtectedRoute>
               <Budget />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/rules"
+          element={
+            <ProtectedRoute>
+              <Rules />
             </ProtectedRoute>
           }
         />
