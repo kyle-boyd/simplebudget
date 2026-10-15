@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createTransactionId, formatCurrency, parseDate } from './utils';
+import { createTransactionId, detectTypeColumn, flowFromType, formatCurrency, parseDate } from './utils';
 
 describe('formatCurrency', () => {
   it('defaults to USD', () => {
@@ -75,5 +75,33 @@ describe('createTransactionId', () => {
       createTransactionId({ ...base, Date: '01/02/26' }),
     ]);
     expect(ids.size).toBe(4);
+  });
+});
+
+describe('flowFromType', () => {
+  it('maps credit to money in and debit to money out', () => {
+    expect(flowFromType('Credit')).toBe('in');
+    expect(flowFromType('credit')).toBe('in');
+    expect(flowFromType('CR')).toBe('in');
+    expect(flowFromType('Debit')).toBe('out');
+    expect(flowFromType('DR')).toBe('out');
+  });
+
+  it('returns undefined for anything it cannot classify, so the row is treated as spending', () => {
+    expect(flowFromType('')).toBeUndefined();
+    expect(flowFromType(undefined)).toBeUndefined();
+    expect(flowFromType('transfer')).toBeUndefined();
+  });
+});
+
+describe('detectTypeColumn', () => {
+  it('scores an exact Type header highest', () => {
+    expect(detectTypeColumn('Type')).toBe(100);
+    expect(detectTypeColumn('Transaction Type')).toBe(100);
+  });
+
+  it('ignores unrelated headers', () => {
+    expect(detectTypeColumn('Amount')).toBe(0);
+    expect(detectTypeColumn('Date')).toBe(0);
   });
 });

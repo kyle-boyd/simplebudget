@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/ui/responsive-dialog';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/hooks/useAuth';
 import { useCurrency } from '@/hooks/useUserSettings';
 import { useCategories, Category, Subcategory } from '@/hooks/useCategories';
@@ -26,14 +27,14 @@ import {
   filterByMonth,
   monthOptions,
 } from '@/lib/months';
-import { ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ChevronRight, FolderInput, Pencil, Plus, Trash2 } from 'lucide-react';
 
 const SELECTED_MONTH_KEY = 'selectedMonth';
 
 export function Budget() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { categories, addCategory, updateCategory, deleteCategory, addSubcategory, updateSubcategory, deleteSubcategory } = useCategories(user?.uid || null);
+  const { categories, addCategory, updateCategory, deleteCategory, addSubcategory, updateSubcategory, deleteSubcategory, moveSubcategory } = useCategories(user?.uid || null);
   const { transactions, mutateTransactions } = useTransactions(user?.uid || null);
   const { rules, updateRule, deleteRule } = useRules(user?.uid || null);
   const { mappings, deleteMapping } = useCategoryMappings(user?.uid || null);
@@ -46,6 +47,7 @@ export function Budget() {
   const [formData, setFormData] = useState({ name: '' });
   const [editingNames, setEditingNames] = useState<{ [key: number]: string }>({});
   const [modalAmount, setModalAmount] = useState(0);
+  const [modalKind, setModalKind] = useState<'fixed' | 'flexible'>('flexible');
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
   const [deletingSubcategoryId, setDeletingSubcategoryId] = useState<number | null>(null);
   const [nameError, setNameError] = useState<string>('');
@@ -56,7 +58,9 @@ export function Budget() {
     parentId?: number;
   } | null>(null);
   const [mobileSheetName, setMobileSheetName] = useState('');
+  const [mobileSheetParentId, setMobileSheetParentId] = useState<number | null>(null);
   const [mobileSheetAmount, setMobileSheetAmount] = useState(0);
+  const [mobileSheetKind, setMobileSheetKind] = useState<'fixed' | 'flexible'>('flexible');
   const [mobileSheetDeleteConfirm, setMobileSheetDeleteConfirm] = useState(false);
 
   // Save to localStorage whenever selectedMonth changes
@@ -180,6 +184,7 @@ export function Budget() {
     setEditingCategory(null);
     setFormData({ name: '' });
     setModalAmount(0);
+    setModalKind('flexible');
     setShowDeleteConfirmation(false);
     setNameError('');
     setIsModalOpen(true);
@@ -190,6 +195,7 @@ export function Budget() {
     setEditingCategory({ category });
     setFormData({ name: category.name });
     setModalAmount(0);
+    setModalKind(category.kind === 'fixed' ? 'fixed' : 'flexible');
     setShowDeleteConfirmation(false);
     setNameError('');
     setIsModalOpen(true);
@@ -317,7 +323,7 @@ export function Budget() {
     setNameError('');
 
     if (editingCategory?.category) {
-      await updateCategory(editingCategory.category.id, { name: trimmedName });
+      await updateCategory(editingCategory.category.id, { name: trimmedName, kind: modalKind });
       await cascadeRename(editingCategory.category.name, trimmedName);
     } else if (editingCategory?.subcategory && editingCategory.parentId) {
       await updateSubcategory(editingCategory.parentId, editingCategory.subcategory.id, {
@@ -336,6 +342,7 @@ export function Budget() {
         id: Date.now(),
         name: trimmedName,
         subcategories: [],
+        kind: modalKind,
       });
     }
 
@@ -382,6 +389,7 @@ export function Budget() {
     setMobileSheet({ type: 'subcategory', sub, parentId });
     setMobileSheetName(sub.name);
     setMobileSheetAmount(sub.amount || 0);
+    setMobileSheetParentId(parentId);
     setMobileSheetDeleteConfirm(false);
   };
 
@@ -389,6 +397,7 @@ export function Budget() {
     setMobileSheet({ type: 'category', category });
     setMobileSheetName(category.name);
     setMobileSheetAmount(category.amount || 0);
+    setMobileSheetKind(category.kind === 'fixed' ? 'fixed' : 'flexible');
     setMobileSheetDeleteConfirm(false);
   };
 
@@ -399,7 +408,10 @@ export function Budget() {
 
     if (mobileSheet.type === 'subcategory' && mobileSheet.sub && mobileSheet.parentId) {
       const previousName = mobileSheet.sub.name;
-      await updateSubcategory(mobileSheet.parentId, mobileSheet.sub.id, {
+      const targetParentId = mobileSheetParentId ?? mobileSheet.parentId;
+      // Reparent and the name/amount edit go in one write (moveSubcategory
+      // applies the updates itself) so the second call can't clobber the first.
+      await moveSubcategory(mobileSheet.parentId, targetParentId, mobileSheet.sub.id, {
         name: trimmedName,
         amount: mobileSheetAmount,
       });
@@ -409,6 +421,7 @@ export function Budget() {
       const hasSubcategories = (mobileSheet.category.subcategories || []).length > 0;
       await updateCategory(mobileSheet.category.id, {
         name: trimmedName,
+        kind: mobileSheetKind,
         // A parent with subcategories derives its budget from them.
         ...(hasSubcategories ? {} : { amount: mobileSheetAmount }),
       });
@@ -456,8 +469,8 @@ export function Budget() {
   return (
     <Layout>
       <div className="space-y-6">
-        <div className="sticky top-0 lg:top-0 z-10 h-auto lg:h-16 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 lg:gap-0 bg-background border-b -mx-4 lg:-mx-6 px-4 lg:px-6 py-4 lg:py-0">
-          <h1 className="font-medium">Budget</h1>
+        <div className="sticky top-0 lg:top-0 z-10 h-auto lg:h-16 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 lg:gap-0 bg-sb-ground/90 backdrop-blur border-b border-sb-hairline -mx-4 lg:-mx-6 px-4 lg:px-6 py-4 lg:py-0">
+          <h1 className="text-xl font-bold tracking-tight">Budget</h1>
           <div className="flex flex-col lg:flex-row gap-4 w-full lg:w-auto">
             <Select value={activeMonth} onValueChange={setSelectedMonth}>
               <SelectTrigger className="w-full lg:w-[180px]">
@@ -498,7 +511,7 @@ export function Budget() {
                           <span className="font-semibold">{category.name}</span>
                           <div className="flex items-center gap-2">
                             <span>
-                              <span className={`text-sm font-medium ${isOverBudget ? 'text-destructive' : 'text-green-600'}`}>
+                              <span className={`text-sm font-medium ${isOverBudget ? 'text-sb-over-text' : 'text-sb-positive-text'}`}>
                                 {formatCurrency(categorySpending)}
                               </span>
                               <span className="text-sm font-medium text-foreground"> of {formatCurrency(totalAmount)}</span>
@@ -515,6 +528,9 @@ export function Budget() {
                       <div className="hidden lg:flex items-center justify-between gap-2 group px-8">
                       <div className="flex items-center gap-2 flex-1">
                         <span className="font-semibold">{category.name}</span>
+                        {!category.isSystem && category.kind === 'fixed' && (
+                          <span className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground">Fixed</span>
+                        )}
                         {!category.isSystem && (
                           <Button
                             variant="ghost"
@@ -541,7 +557,7 @@ export function Budget() {
                         </div>
                         <div className="text-right min-w-[60px] lg:min-w-[100px]">
                           <div className="text-sm text-muted-foreground">Spent</div>
-                          <div className={`font-semibold ${isOverBudget ? 'text-destructive' : 'text-green-600'}`}>
+                          <div className={`font-semibold ${isOverBudget ? 'text-sb-over-text' : 'text-sb-positive-text'}`}>
                             {formatCurrency(categorySpending)}
                           </div>
                         </div>
@@ -585,7 +601,7 @@ export function Budget() {
                                 <span className="font-medium">{sub.name}</span>
                                 <div className="flex items-center gap-2">
                                   <span>
-                                    <span className={`text-sm ${isSubOverBudget ? 'text-destructive' : 'text-green-600'}`}>
+                                    <span className={`text-sm ${isSubOverBudget ? 'text-sb-over-text' : 'text-sb-positive-text'}`}>
                                       {formatCurrency(spending)}
                                     </span>
                                     <span className="text-sm text-foreground"> of {formatCurrency(budget)}</span>
@@ -649,12 +665,40 @@ export function Budget() {
                                 />
                               </div>
                               <div className="text-right min-w-[60px] lg:min-w-[100px]">
-                                <div className={`font-medium ${isSubOverBudget ? 'text-destructive' : 'text-green-600'}`}>
+                                <div className={`font-medium ${isSubOverBudget ? 'text-sb-over-text' : 'text-sb-positive-text'}`}>
                                   {formatCurrency(spending)}
                                 </div>
                               </div>
                               {!sub.isSystem ? (
                                 <div className="relative flex items-center">
+                                  {regularCategories.length > 1 && sub.name && (
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-8 w-8 p-0 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity"
+                                          title="Move to another category"
+                                        >
+                                          <FolderInput className="h-4 w-4" />
+                                        </Button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end">
+                                        <DropdownMenuLabel>Move to</DropdownMenuLabel>
+                                        <DropdownMenuSeparator />
+                                        {regularCategories
+                                          .filter(target => target.id !== category.id)
+                                          .map(target => (
+                                            <DropdownMenuItem
+                                              key={target.id}
+                                              onSelect={() => moveSubcategory(category.id, target.id, sub.id)}
+                                            >
+                                              {target.name}
+                                            </DropdownMenuItem>
+                                          ))}
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  )}
                                   {deletingSubcategoryId === sub.id ? (
                                     <div className="delete-confirmation-popover absolute right-full mr-2 bg-popover border rounded-md shadow-lg p-3 flex items-center gap-3 whitespace-nowrap z-10">
                                       <span className="text-sm">
@@ -881,6 +925,31 @@ export function Budget() {
                   />
                 </div>
               )}
+              {!editingCategory?.subcategory && !editingCategory?.parentId && (
+                <div className="space-y-2">
+                  <Label>Type</Label>
+                  <div className="inline-flex rounded-md border p-0.5" role="group" aria-label="Category type">
+                    {(['flexible', 'fixed'] as const).map(kind => (
+                      <Button
+                        key={kind}
+                        type="button"
+                        variant={modalKind === kind ? 'default' : 'ghost'}
+                        size="sm"
+                        aria-pressed={modalKind === kind}
+                        onClick={() => setModalKind(kind)}
+                        className="capitalize"
+                      >
+                        {kind}
+                      </Button>
+                    ))}
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {modalKind === 'fixed'
+                      ? 'Recurring bill — summarised as "bills paid" on the dashboard.'
+                      : 'Variable spending — paced day by day on the dashboard.'}
+                  </p>
+                </div>
+              )}
             </div>
             <DialogFooter>
               <div className="flex items-center justify-between w-full">
@@ -967,6 +1036,44 @@ export function Budget() {
                     onChange={setMobileSheetAmount}
                     className="text-right w-[140px]"
                   />
+                </div>
+              )}
+              {mobileSheet?.type === 'subcategory' && regularCategories.length > 1 && (
+                <div className="space-y-2">
+                  <Label htmlFor="mobile-category">Category</Label>
+                  <Select
+                    value={mobileSheetParentId != null ? String(mobileSheetParentId) : undefined}
+                    onValueChange={(value) => setMobileSheetParentId(Number(value))}
+                  >
+                    <SelectTrigger id="mobile-category">
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {regularCategories.map(cat => (
+                        <SelectItem key={cat.id} value={String(cat.id)}>{cat.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {mobileSheet?.type === 'category' && (
+                <div className="space-y-2">
+                  <Label>Type</Label>
+                  <div className="inline-flex rounded-md border p-0.5" role="group" aria-label="Category type">
+                    {(['flexible', 'fixed'] as const).map(kind => (
+                      <Button
+                        key={kind}
+                        type="button"
+                        variant={mobileSheetKind === kind ? 'default' : 'ghost'}
+                        size="sm"
+                        aria-pressed={mobileSheetKind === kind}
+                        onClick={() => setMobileSheetKind(kind)}
+                        className="capitalize"
+                      >
+                        {kind}
+                      </Button>
+                    ))}
+                  </div>
                 </div>
               )}
               <Button

@@ -44,6 +44,89 @@ describe('matchRule', () => {
   });
 });
 
+describe('matchRule merchant normalisation', () => {
+  it('strips a store number sitting between the words of a match', () => {
+    // The only thing separating fuel from groceries at King Soopers is a rule
+    // on "king soopers fuel", and the raw description interleaves a store
+    // number: "KING SOOPERS #0685 FUEL ARVADA". Without stripping it the
+    // specific rule never matches and fuel is silently filed as groceries.
+    const rules = [
+      makeRule({ id: 'grocery', matchText: 'king soopers', category: 'Groceries' }),
+      makeRule({ id: 'fuel', matchText: 'king soopers fuel', category: 'Gas' }),
+    ];
+    expect(matchRule('KING SOOPERS #0685 FUEL ARVADA', rules)?.category).toBe('Gas');
+    expect(matchRule('KING SOOPERS #0045 ARVADA', rules)?.category).toBe('Groceries');
+  });
+
+  it('strips a payment-processor prefix', () => {
+    const rules = [makeRule({ matchText: 'honey hill cafe', category: 'Coffee Shops' })];
+    expect(matchRule('SQ *HONEY HILL CAFE', rules)?.category).toBe('Coffee Shops');
+    expect(matchRule('TST* ODELLS BAGEL', [makeRule({ matchText: 'odells bagel' })])).not.toBeNull();
+  });
+
+  it('strips a per-transaction reference code', () => {
+    const rules = [makeRule({ matchText: 'amazon mktpl', category: 'Home Supplies' })];
+    expect(matchRule('AMAZON MKTPL*MP6CQ6F53 Amzn.com/bill', rules)?.category).toBe('Home Supplies');
+  });
+
+  it('keeps a merchant name that follows a star', () => {
+    // A star does not reliably introduce a reference code: in "PAYPAL
+    // *ALIPAYUSINC" it introduces the merchant. Dropping the whole starred
+    // token would collapse every PayPal row onto one meaningless rule.
+    const rules = [makeRule({ matchText: 'alipayusinc', category: 'Home Supplies' })];
+    expect(matchRule('PAYPAL *ALIPAYUSINC', rules)?.category).toBe('Home Supplies');
+  });
+
+  it('keeps a merchant name run together with its reference digits', () => {
+    // "WF *WAYFAIR4392057853" concatenates merchant and reference, so only the
+    // digit run can be dropped if the merchant is to survive.
+    const rules = [makeRule({ matchText: 'wayfair', category: 'Home Supplies' })];
+    expect(matchRule('WF *WAYFAIR4392057853 866-263-8325', rules)?.category).toBe('Home Supplies');
+  });
+
+  it('strips a support phone number', () => {
+    const rules = [makeRule({ matchText: 'vsp', category: 'Insurance' })];
+    expect(matchRule('VSP 800-785-0699 800-785-0699', rules)?.category).toBe('Insurance');
+  });
+});
+
+describe('categorize with an always-review rule', () => {
+  const rules = [
+    makeRule({ matchText: 'amazon', category: 'Home Supplies', alwaysReview: true }),
+  ];
+
+  it('records a suggestion instead of filing the transaction', () => {
+    // Amazon spans several categories, so the merchant alone cannot decide this
+    // purchase. The row must reach the review screen rather than land in budget
+    // totals, which is why Category stays unset.
+    const [result] = categorize([makeTransaction({ Description: 'AMAZON MKTPL' })], rules, {});
+    expect(result.suggestedCategory).toBe('Home Supplies');
+    expect(result.suggestionConfidence).toBe('low');
+    expect(result.Category).toBeUndefined();
+    expect(result.hasRule).toBeUndefined();
+  });
+
+  it('wins over the bank category mapping', () => {
+    const [result] = categorize(
+      [makeTransaction({ Description: 'AMAZON', importedCategory: 'food_and_drink' })],
+      rules,
+      { food_and_drink: 'Restaurants' }
+    );
+    expect(result.Category).toBeUndefined();
+    expect(result.suggestedCategory).toBe('Home Supplies');
+  });
+
+  it('still leaves a hand-picked category alone', () => {
+    const [result] = categorize(
+      [makeTransaction({ Description: 'AMAZON', Category: 'Gift' })],
+      rules,
+      {}
+    );
+    expect(result.Category).toBe('Gift');
+    expect(result.suggestedCategory).toBeUndefined();
+  });
+});
+
 describe('ruleMatches', () => {
   it('agrees with matchRule, so "apply to all matching" selects the same rows', () => {
     expect(ruleMatches('KROGER #123', 'kroger')).toBe(true);
@@ -105,6 +188,75 @@ describe('categorize', () => {
   });
 });
 
+describe("categorize and the CSV's own category column", () => {
+  const rules = [makeRule({ matchText: 'king soopers', category: 'Groceries' })];
+  const names = ['Groceries', 'Gas', 'Restaurants'];
+
+  it('lets a rule win over the label the bank supplied', () => {
+    // Regression: the importer wrote the CSV category straight to Category, and
+    // categorize() skips rows that already have one - so mapping a Category
+    // column silently disabled every rule. 2,578 rows imported with zero rule
+    // matches before this was found.
+    const [result] = categorize(
+      [makeTransaction({ Description: 'KING SOOPERS #0045', importedCategory: 'Fast Food' })],
+      rules,
+      {},
+      names
+    );
+    expect(result.Category).toBe('Groceries');
+    expect(result.hasRule).toBe(true);
+  });
+
+  it('accepts a bank label that is already one of the user\'s categories', () => {
+    const [result] = categorize(
+      [makeTransaction({ Description: 'SOMEWHERE', importedCategory: 'Groceries' })],
+      [],
+      {},
+      names
+    );
+    expect(result.Category).toBe('Groceries');
+  });
+
+  it('matches such a label ignoring case', () => {
+    const [result] = categorize(
+      [makeTransaction({ Description: 'SOMEWHERE', importedCategory: 'groceries' })],
+      [],
+      {},
+      names
+    );
+    expect(result.Category).toBe('Groceries'); // the user's casing, not the CSV's
+  });
+
+  it('leaves a foreign label uncategorized rather than filing it as invalid', () => {
+    // "Fast Food" is not one of the user's categories. Writing it to Category
+    // is what orphaned 2,602 rows: they render as an error and vanish from
+    // budget totals. Better to leave Category empty and keep the hint.
+    const [result] = categorize(
+      [makeTransaction({ Description: 'SOMEWHERE', importedCategory: 'Fast Food' })],
+      [],
+      {},
+      names
+    );
+    expect(result.Category).toBeUndefined();
+    expect(result.importedCategory).toBe('Fast Food');
+  });
+
+  it('prefers an explicit mapping over a name match', () => {
+    const [result] = categorize(
+      [makeTransaction({ Description: 'SOMEWHERE', importedCategory: 'Groceries' })],
+      [],
+      { Groceries: 'Restaurants' },
+      names
+    );
+    expect(result.Category).toBe('Restaurants');
+  });
+
+  it('is still a no-op with nothing to go on', () => {
+    const input = [makeTransaction()];
+    expect(categorize(input, [], {}, [])).toBe(input);
+  });
+});
+
 describe('renameCategoryInTransactions', () => {
   const filed = [
     makeTransaction({ id: 'a', Category: 'Gas' }),
@@ -125,6 +277,27 @@ describe('renameCategoryInTransactions', () => {
   it('leaves untouched rows identical by reference', () => {
     const result = renameCategoryInTransactions(filed, 'Gas', 'Fuel');
     expect(result[2]).toBe(filed[2]);
+  });
+});
+
+describe('category names are not merchant-normalised', () => {
+  it('keeps digits in a category name', () => {
+    // Merchant matching strips store numbers and reference codes. Running that
+    // over category names would reduce "College 529" to "college" and quietly
+    // merge it with any other category sharing the first word.
+    const filed = [
+      makeTransaction({ id: 'a', Category: 'College 529' }),
+      makeTransaction({ id: 'b', Category: 'College' }),
+    ];
+    expect(transactionsUsingCategory(filed, 'College 529')).toHaveLength(1);
+
+    const renamed = renameCategoryInTransactions(filed, 'College 529', '529 Plan');
+    expect(renamed.map((t) => t.Category)).toEqual(['529 Plan', 'College']);
+  });
+
+  it('keeps punctuation in a category name', () => {
+    const filed = [makeTransaction({ Category: 'Rent/Mortgage' })];
+    expect(transactionsUsingCategory(filed, 'rent/mortgage')).toHaveLength(1);
   });
 });
 

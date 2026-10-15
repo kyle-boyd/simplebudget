@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/sidebar';
 import { useAuth } from '@/hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Receipt, Wallet, Settings as SettingsIcon, LogOut } from 'lucide-react';
+import { LayoutDashboard, Receipt, Wallet, Settings as SettingsIcon, LogOut, ClipboardCheck, ListFilter } from 'lucide-react';
 
 interface SidebarProps {
   onNavigate?: () => void;
@@ -59,11 +59,29 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         </SidebarItem>
         <SidebarItem
           asChild
+          variant={isActive('/review') ? 'active' : 'default'}
+        >
+          <Link to="/review" onClick={handleNavigation}>
+            <ClipboardCheck className="h-5 w-5" />
+            Review
+          </Link>
+        </SidebarItem>
+        <SidebarItem
+          asChild
           variant={isActive('/budget') ? 'active' : 'default'}
         >
           <Link to="/budget" onClick={handleNavigation}>
             <Wallet className="h-5 w-5" />
             Budget
+          </Link>
+        </SidebarItem>
+        <SidebarItem
+          asChild
+          variant={isActive('/rules') ? 'active' : 'default'}
+        >
+          <Link to="/rules" onClick={handleNavigation}>
+            <ListFilter className="h-5 w-5" />
+            Rules
           </Link>
         </SidebarItem>
         <SidebarItem

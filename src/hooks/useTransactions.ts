@@ -12,16 +12,37 @@ export interface Transaction {
   confirmed?: boolean;
   hasRule?: boolean;
   bankAccountId?: string;
+  /**
+   * Direction of the money, derived from the CSV `Type` column on import
+   * (`Debit` → `out`, `Credit` → `in`). Amounts are stored as positive
+   * magnitudes, so this is the only reliable signal that a row is income, a
+   * transfer, or a refund rather than spending. Left `undefined` for rows
+   * imported before this existed (and files with no `Type` column), which are
+   * treated as spending so nothing silently drops out of existing totals.
+   */
+  flow?: 'in' | 'out';
+  /**
+   * A proposed category awaiting review, written by an `alwaysReview` rule on
+   * import. Deliberately separate from `Category`: a suggestion must not reach
+   * budget totals until it is accepted on the review screen.
+   */
+  suggestedCategory?: string;
+  suggestionConfidence?: 'high' | 'low';
 }
 
 /**
  * Serialises edits per user. Module level rather than a ref, so separate
  * `useTransactions` callers on the same screen share one queue.
+ *
+ * The tail resolves to the list as written by the last mutation, or `null` when
+ * the chain is idle (nothing queued yet, or the previous mutation failed). The
+ * next mutation reuses that list instead of re-reading, so a chain of rapid
+ * edits never depends on a read reflecting the write just before it.
  */
-const mutationQueues = new Map<string, Promise<unknown>>();
+const mutationQueues = new Map<string, Promise<Transaction[] | null>>();
 
-function queueFor(userId: string): Promise<unknown> {
-  return mutationQueues.get(userId) ?? Promise.resolve();
+function queueFor(userId: string): Promise<Transaction[] | null> {
+  return mutationQueues.get(userId) ?? Promise.resolve(null);
 }
 
 function toTransactionArray(value: unknown): Transaction[] {
@@ -63,24 +84,40 @@ export function useTransactions(userId: string | null) {
   /**
    * Applies `mutate` to the stored list as a read-modify-write.
    *
-   * Two things are load-bearing here. It reads from the database rather than the
-   * rendered copy, which only catches up after a write round-trips. And it
-   * queues behind any mutation already in progress for this user: because the
-   * whole list is written at once, two overlapping read-modify-writes would both
-   * read the same "before" state and the second would discard the first's edit.
+   * Three things are load-bearing here. It never builds the next list from the
+   * rendered copy, which only catches up after a write round-trips. It queues
+   * behind any mutation already in progress for this user: because the whole
+   * list is written at once, two overlapping read-modify-writes would both start
+   * from the same "before" state and the second would discard the first's edit.
+   * And once the chain is running it threads each mutation's result straight
+   * into the next rather than re-reading — a `get()` issued right after a write
+   * can still lag that write (the local cache syncs behind the server ack), so
+   * re-reading would feed a stale base back in and silently drop edits made in a
+   * rapid burst. Only the first mutation of an idle chain reads from the DB.
    */
   const mutateTransactions = useCallback(async (
     mutate: (current: Transaction[]) => Transaction[]
   ) => {
     if (!userId) return;
 
-    const run = queueFor(userId).then(async () => {
-      const snapshot = await get(ref(db, `users/${userId}/transactions`));
-      await saveTransactions(mutate(toTransactionArray(snapshot.val())));
+    const run = queueFor(userId).then(async (previous) => {
+      const current = previous ?? toTransactionArray((await get(ref(db, `users/${userId}/transactions`))).val());
+      const next = mutate(current);
+      await saveTransactions(next);
+      return next;
     });
 
-    // A failed mutation must not wedge the queue for every later one.
-    mutationQueues.set(userId, run.catch(() => {}));
+    // A failed mutation must not wedge the queue for every later one; resetting
+    // the tail to null makes the next mutation re-read the (rolled-back) list.
+    const tail = run.catch(() => null);
+    mutationQueues.set(userId, tail);
+
+    // Once this burst has fully drained, forget the cached list so the next
+    // interaction reads fresh from the DB — threading in memory only needs to
+    // survive a back-to-back burst, not stand in for the DB indefinitely.
+    tail.then(() => {
+      if (mutationQueues.get(userId) === tail) mutationQueues.delete(userId);
+    });
 
     return run;
   }, [userId, saveTransactions]);

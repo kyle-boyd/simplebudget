@@ -7,6 +7,13 @@ export interface Rule {
   matchText: string;
   category: string;
   createdAt: string;
+  /**
+   * Set on merchants that genuinely span several categories (Amazon, Target,
+   * Costco). The rule still supplies `category` as a starting guess, but the
+   * transaction is sent to review rather than filed automatically - the
+   * description alone cannot say which category a given purchase belongs to.
+   */
+  alwaysReview?: boolean;
 }
 
 export function useRules(userId: string | null) {
